@@ -1,0 +1,40 @@
+From 42f284edda74a30d105bb7f40f96e7e21ada1945 Mon Sep 17 00:00:00 2001
+From: Vlad Zagorodniy <vladzzag@gmail.com>
+Date: Mon, 12 Feb 2018 20:14:41 +0200
+Subject: [PATCH] reserve space for checkable widgets on the left side
+
+---
+ kstyle/breezestyle.cpp | 10 +++-------
+ 1 file changed, 3 insertions(+), 7 deletions(-)
+
+diff --git a/kstyle/breezestyle.cpp b/kstyle/breezestyle.cpp
+index 51092586..07f0be7d 100644
+--- a/kstyle/breezestyle.cpp
++++ b/kstyle/breezestyle.cpp
+@@ -2728,8 +2728,7 @@ namespace Breeze
+                 leftColumnWidth += Metrics::MenuItem_ItemSpacing;
+ 
+                 // add checkbox indicator width
+-                if( menuItemOption->menuHasCheckableItems )
+-                { leftColumnWidth += Metrics::CheckBox_Size + Metrics::MenuItem_ItemSpacing; }
++                leftColumnWidth += Metrics::CheckBox_Size + Metrics::MenuItem_ItemSpacing;
+ 
+                 // add spacing for accelerator
+                 /*
+@@ -4698,11 +4697,8 @@ namespace Breeze
+         // define relevant rectangles
+         // checkbox
+         QRect checkBoxRect;
+-        if( menuItemOption->menuHasCheckableItems )
+-        {
+-            checkBoxRect = QRect( contentsRect.left(), contentsRect.top() + (contentsRect.height()-Metrics::CheckBox_Size)/2, Metrics::CheckBox_Size, Metrics::CheckBox_Size );
+-            contentsRect.setLeft( checkBoxRect.right() + Metrics::MenuItem_ItemSpacing + 1 );
+-        }
++        checkBoxRect = QRect( contentsRect.left(), contentsRect.top() + (contentsRect.height()-Metrics::CheckBox_Size)/2, Metrics::CheckBox_Size, Metrics::CheckBox_Size );
++        contentsRect.setLeft( checkBoxRect.right() + Metrics::MenuItem_ItemSpacing + 1 );
+ 
+         // render checkbox indicator
+         if( menuItemOption->checkType == QStyleOptionMenuItem::NonExclusive )
+-- 
+2.16.1
+

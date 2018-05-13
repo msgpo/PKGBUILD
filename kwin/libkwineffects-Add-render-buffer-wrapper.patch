@@ -1,0 +1,272 @@
+From 56b2d3ce4f7711dd5c9d1333472000aa06a22556 Mon Sep 17 00:00:00 2001
+From: Vlad Zagorodniy <vladzzag@gmail.com>
+Date: Mon, 26 Mar 2018 02:17:24 +0300
+Subject: [PATCH 1/7] [libkwineffects] Add render buffer wrapper
+
+---
+ libkwineffects/CMakeLists.txt         |   1 +
+ libkwineffects/kwinglrenderbuffer.cpp | 162 ++++++++++++++++++++++++++
+ libkwineffects/kwinglrenderbuffer.h   |  70 +++++++++++
+ 3 files changed, 233 insertions(+)
+ create mode 100644 libkwineffects/kwinglrenderbuffer.cpp
+ create mode 100644 libkwineffects/kwinglrenderbuffer.h
+
+diff --git a/libkwineffects/CMakeLists.txt b/libkwineffects/CMakeLists.txt
+index 97717197d..74158787c 100644
+--- a/libkwineffects/CMakeLists.txt
++++ b/libkwineffects/CMakeLists.txt
+@@ -79,6 +79,7 @@ install(TARGETS kwineffects EXPORT kdeworkspaceLibraryTargets ${INSTALL_TARGETS_
+ # kwingl(es)utils library
+ set(kwin_GLUTILSLIB_SRCS
+     kwinglutils.cpp
++    kwinglrenderbuffer.cpp
+     kwingltexture.cpp
+     kwinglutils_funcs.cpp
+     kwinglplatform.cpp
+diff --git a/libkwineffects/kwinglrenderbuffer.cpp b/libkwineffects/kwinglrenderbuffer.cpp
+new file mode 100644
+index 000000000..fd1fb2451
+--- /dev/null
++++ b/libkwineffects/kwinglrenderbuffer.cpp
+@@ -0,0 +1,162 @@
++/********************************************************************
++ KWin - the KDE window manager
++ This file is part of the KDE project.
++
++Copyright (C) 2018 Vlad Zagorodniy <vladzzag@gmail.com>
++
++This program is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 2 of the License, or
++(at your option) any later version.
++
++This program is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*********************************************************************/
++
++#include "kwinglrenderbuffer.h"
++
++#include <QSharedData>
++
++
++namespace KWin
++{
++
++class Q_DECL_HIDDEN GLRenderbuffer::Private : public QSharedData
++{
++public:
++    Private();
++    ~Private();
++
++    GLuint renderbuffer = 0;
++    GLenum target = GL_RENDERBUFFER;
++    GLenum internalFormat = GL_RGBA8;
++    int width = 0;
++    int height = 0;
++    int samples = 0;
++
++private:
++    Q_DISABLE_COPY(Private)
++};
++
++GLRenderbuffer::Private::Private()
++{
++}
++
++GLRenderbuffer::Private::~Private()
++{
++    if (renderbuffer != 0) {
++        glDeleteRenderbuffers(1, &renderbuffer);
++    }
++}
++
++GLRenderbuffer::GLRenderbuffer(int width, int height, int samples,
++                               GLenum format, GLenum target)
++    : d(new GLRenderbuffer::Private)
++{
++    d->target = target;
++    d->internalFormat = format;
++    d->width = width;
++    d->height = height;
++    d->samples = samples;
++
++    glGenRenderbuffers(1, &d->renderbuffer);
++
++    bind();
++    if (samples > 0) {
++        glRenderbufferStorageMultisample(target, samples, format, width, height);
++    } else {
++        glRenderbufferStorage(target, format, width, height);
++    }
++    unbind();
++}
++
++GLRenderbuffer::GLRenderbuffer(const QSize &size, int samples, GLenum format, GLenum target)
++    : GLRenderbuffer(size.width(), size.height(), samples, format, target)
++{
++}
++
++GLRenderbuffer::~GLRenderbuffer()
++{
++}
++
++void GLRenderbuffer::bind()
++{
++    glBindRenderbuffer(d->target, d->renderbuffer);
++}
++
++void GLRenderbuffer::unbind()
++{
++    glBindRenderbuffer(d->target, 0);
++}
++
++GLuint GLRenderbuffer::renderbuffer() const
++{
++    return d->renderbuffer;
++}
++
++GLenum GLRenderbuffer::target() const
++{
++    return d->target;
++}
++
++GLenum GLRenderbuffer::internalFormat() const
++{
++    return d->internalFormat;
++}
++
++int GLRenderbuffer::samples() const
++{
++    return d->samples;
++}
++
++int GLRenderbuffer::width() const
++{
++    return d->width;
++}
++
++int GLRenderbuffer::height() const
++{
++    return d->height;
++}
++
++QSize GLRenderbuffer::size() const
++{
++    return QSize(d->width, d->height);
++}
++
++void GLRenderbuffer::resize(int width, int height)
++{
++    if (d->width == width && d->height == height) {
++        return;
++    }
++
++    if (d->renderbuffer != 0) {
++        glDeleteRenderbuffers(1, &d->renderbuffer);
++    }
++
++    glGenRenderbuffers(1, &d->renderbuffer);
++
++    bind();
++    if (d->samples > 0) {
++        glRenderbufferStorageMultisample(
++            d->target, d->samples, d->internalFormat, d->width, d->height);
++    } else {
++        glRenderbufferStorage(d->target, d->internalFormat, d->width, d->height);
++    }
++    unbind();
++
++    d->width = width;
++    d->height = height;
++}
++
++void GLRenderbuffer::resize(const QSize &size)
++{
++    resize(size.width(), size.height());
++}
++
++}
+diff --git a/libkwineffects/kwinglrenderbuffer.h b/libkwineffects/kwinglrenderbuffer.h
+new file mode 100644
+index 000000000..62a56be1e
+--- /dev/null
++++ b/libkwineffects/kwinglrenderbuffer.h
+@@ -0,0 +1,70 @@
++/********************************************************************
++ KWin - the KDE window manager
++ This file is part of the KDE project.
++
++Copyright (C) 2018 Vlad Zagorodniy <vladzzag@gmail.com>
++
++This program is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 2 of the License, or
++(at your option) any later version.
++
++This program is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*********************************************************************/
++
++#ifndef KWIN_GLRENDERBUFFER_H
++#define KWIN_GLRENDERBUFFER_H
++
++#include <kwinglutils_export.h>
++
++#include <QExplicitlySharedDataPointer>
++#include <QSize>
++
++#include <epoxy/gl.h>
++
++
++namespace KWin
++{
++
++class KWINGLUTILS_EXPORT GLRenderbuffer
++{
++public:
++    GLRenderbuffer(int width, int height, int samples = 0,
++                   GLenum format = GL_RGBA8,
++                   GLenum target = GL_RENDERBUFFER);
++    GLRenderbuffer(const QSize &size, int samples = 0,
++                   GLenum format = GL_RGBA8,
++                   GLenum target = GL_RENDERBUFFER);
++    ~GLRenderbuffer();
++
++    void bind();
++    void unbind();
++
++    GLuint renderbuffer() const;
++    GLenum target() const;
++    GLenum internalFormat() const;
++    int samples() const;
++
++    int width() const;
++    int height() const;
++    QSize size() const;
++
++    void resize(int width, int height);
++    void resize(const QSize &size);
++
++private:
++    class Private;
++
++private:
++    QExplicitlySharedDataPointer<Private> d;
++};
++
++} // namespace KWin
++
++#endif // KWIN_GLRENDERBUFFER_H
+-- 
+2.17.0
+

@@ -1,0 +1,36 @@
+# Maintainer: Vlad Zagorodniy <vladzzag@gmail.com.com>
+pkgname=latte-dock
+pkgver=v0.7.1.r715.g2d9b5376
+pkgrel=1
+pkgdesc="Latte is a dock based on plasma frameworks that provides an elegant and intuitive experience for your tasks and plasmoids"
+arch=('x86_64')
+url="https://github.com/psifidotos/Latte-Dock"
+license=('GPL')
+depends=(knewstuff plasma-framework hicolor-icon-theme)
+makedepends=(git extra-cmake-modules python)
+source=("$pkgname"::'git://github.com/psifidotos/Latte-Dock.git')
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$pkgname"
+    printf "%s" "$(git describe --long --tags | sed 's/\([^-]*-g\)/r\1/;s/-/./g')"
+}
+
+prepare() {
+    mkdir build
+}
+
+build() {
+    cd build
+
+    cmake ../$pkgname \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_BUILD_TYPE=Release
+    make
+}
+
+package() {
+    cd build
+
+    make DESTDIR="$pkgdir" install
+}

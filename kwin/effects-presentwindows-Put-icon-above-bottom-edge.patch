@@ -1,0 +1,124 @@
+From d9f7fdf10c7180288af3b67486d7fa23a0a27725 Mon Sep 17 00:00:00 2001
+From: Vlad Zagorodniy <vladzzag@gmail.com>
+Date: Thu, 19 Apr 2018 00:54:44 +0300
+Subject: [PATCH] [effects/presentwindows] Put icon above bottom edge
+
+---
+ effects/presentwindows/presentwindows.cpp | 39 +++++++++++++----------
+ 1 file changed, 22 insertions(+), 17 deletions(-)
+
+diff --git a/effects/presentwindows/presentwindows.cpp b/effects/presentwindows/presentwindows.cpp
+index 65a127947..4253c1841 100755
+--- a/effects/presentwindows/presentwindows.cpp
++++ b/effects/presentwindows/presentwindows.cpp
+@@ -45,6 +45,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ #include <QVector2D>
+ #include <QVector4D>
+ 
++namespace {
++const int iconSize = 64;
++}
++
+ namespace KWin
+ {
+ 
+@@ -355,7 +359,7 @@ void PresentWindowsEffect::paintWindow(EffectWindow *w, int mask, QRegion region
+         mask |= PAINT_WINDOW_LANCZOS;
+         // Apply opacity and brightness
+         data.multiplyOpacity(winData->opacity);
+-        data.multiplyBrightness(interpolate(0.40, 1.0, winData->highlight));
++        data.multiplyBrightness(interpolate(0.80, 1.0, winData->highlight));
+ 
+         if (m_motionManager.isManaging(w)) {
+             if (w->isDesktop()) {
+@@ -414,14 +418,14 @@ void PresentWindowsEffect::paintWindow(EffectWindow *w, int mask, QRegion region
+ 
+ 
+             if (m_showIcons) {
+-                QPoint point(rect.x() + rect.width() * 0.95,
+-                             rect.y() + rect.height() * 0.95);
++                QPoint point(rect.x() + rect.width() / 2,
++                             rect.y() + rect.height());
+                 winData->iconFrame->setPosition(point);
+                 if (effects->compositingType() == KWin::OpenGL2Compositing && data.shader) {
+-                    const float a = 0.9 * data.opacity() * m_decalOpacity * 0.75;
++                    const float a = 1.0;
+                     data.shader->setUniform(GLShader::ModulationConstant, QVector4D(a, a, a, a));
+                 }
+-                winData->iconFrame->render(region, 0.9 * data.opacity() * m_decalOpacity, 0.75);
++                winData->iconFrame->render(region);
+             }
+             if (m_showCaptions) {
+                 QPoint point(rect.x() + rect.width() / 2,
+@@ -459,10 +463,10 @@ void PresentWindowsEffect::slotWindowAdded(EffectWindow *w)
+     font.setBold(true);
+     font.setPointSize(12);
+     winData->textFrame->setFont(font);
+-    winData->iconFrame = effects->effectFrame(EffectFrameUnstyled, false);
+-    winData->iconFrame->setAlignment(Qt::AlignRight | Qt::AlignBottom);
++    winData->iconFrame = effects->effectFrame(EffectFrameNone, false);
++    winData->iconFrame->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+     winData->iconFrame->setIcon(w->icon());
+-    winData->iconFrame->setIconSize(QSize(32, 32));
++    winData->iconFrame->setIconSize(QSize(iconSize, iconSize));
+     if (isSelectableWindow(w)) {
+         m_motionManager.manage(w);
+         rearrangeWindows();
+@@ -1090,7 +1094,7 @@ void PresentWindowsEffect::calculateWindowTransformationsClosest(EffectWindowLis
+             area.x() + (slot % columns) * slotWidth,
+             area.y() + (slot / columns) * slotHeight,
+             slotWidth, slotHeight);
+-        target.adjust(10, 10, -10, -10);   // Borders
++        target.adjust(10, 10, -10, -10 - iconSize / 2);   // Borders
+         double scale;
+         if (target.width() / double(w->width()) < target.height() / double(w->height())) {
+             // Center vertically
+@@ -1129,7 +1133,8 @@ void PresentWindowsEffect::calculateWindowTransformationsKompose(EffectWindowLis
+ 
+     // Following code is taken from Kompose 0.5.4, src/komposelayout.cpp
+ 
+-    int spacing = 10;
++    int spacingX = 10;
++    int spacingY = 10 + iconSize / 2;
+     int rows, columns;
+     double parentRatio = availRect.width() / (double)availRect.height();
+     // Use more columns than rows when parent's width > parent's height
+@@ -1143,8 +1148,8 @@ void PresentWindowsEffect::calculateWindowTransformationsKompose(EffectWindowLis
+     //qCDebug(KWINEFFECTS) << "Using " << rows << " rows & " << columns << " columns for " << windowlist.count() << " clients";
+ 
+     // Calculate width & height
+-    int w = (availRect.width() - (columns + 1) * spacing) / columns;
+-    int h = (availRect.height() - (rows + 1) * spacing) / rows;
++    int w = (availRect.width() - (columns + 1) * spacingX) / columns;
++    int h = (availRect.height() - (rows + 1) * spacingY) / rows;
+ 
+     EffectWindowList::iterator it(windowlist.begin());
+     QList<QRect> geometryRects;
+@@ -1213,8 +1218,8 @@ void PresentWindowsEffect::calculateWindowTransformationsKompose(EffectWindowLis
+                 alignmentYoffset = h - widgeth;
+             if (j == 0 && w > widgetw)
+                 alignmentXoffset = w - widgetw;
+-            QRect geom(availRect.x() + j *(w + spacing) + spacing + alignmentXoffset + xOffsetFromLastCol,
+-                       availRect.y() + i *(h + spacing) + spacing + alignmentYoffset,
++            QRect geom(availRect.x() + j *(w + spacingX) + spacingX + alignmentXoffset + xOffsetFromLastCol,
++                       availRect.y() + i *(h + spacingY) + spacingY + alignmentYoffset,
+                        widgetw, widgeth);
+             geometryRects.append(geom);
+ 
+@@ -1545,10 +1550,10 @@ void PresentWindowsEffect::setActive(bool active)
+             font.setBold(true);
+             font.setPointSize(12);
+             winData->textFrame->setFont(font);
+-            winData->iconFrame = effects->effectFrame(EffectFrameUnstyled, false);
+-            winData->iconFrame->setAlignment(Qt::AlignRight | Qt::AlignBottom);
++            winData->iconFrame = effects->effectFrame(EffectFrameNone, false);
++            winData->iconFrame->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
+             winData->iconFrame->setIcon(w->icon());
+-            winData->iconFrame->setIconSize(QSize(32, 32));
++            winData->iconFrame->setIconSize(QSize(iconSize, iconSize));
+         }
+         // Filter out special windows such as panels and taskbars
+         foreach (EffectWindow * w, effects->stackingOrder()) {
+-- 
+2.17.0
+

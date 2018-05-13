@@ -1,0 +1,77 @@
+# Maintainer: Vlad Zagorodniy <vladzzag@gmail.com>
+# Copied from arch repos.
+
+pkgbase=breeze
+pkgname=(breeze breeze-kde4)
+pkgver=5.12.5
+pkgrel=3
+arch=(x86_64)
+url='https://www.kde.org/workspaces/plasmadesktop/'
+license=(LGPL)
+makedepends=(automoc4 breeze-icons fftw frameworkintegration extra-cmake-modules
+             kcmutils kdecoration kdelibs plasma-framework python)
+source=("https://download.kde.org/stable/plasma/$pkgver/$pkgbase-$pkgver.tar.xz"{,.sig}
+        reserve-space-for-checkable-widgets-on-the-left-side.patch
+        align-checkable-widgets-in-menu-items.patch
+        libbreezecommon-add-box-shadow-helper.patch
+        kdecoration-refine-shadows.patch
+        kstyle-refine-shadows.patch)
+sha256sums=('764c1d174f5a2844a7144995b05b179a2d161d65f74d45ca353b524807f6aff7'
+            'SKIP'
+            '4419b2042c131666e27bef4b1ea48c1027fbedb176755263d272a71d1539bd35'
+            '2e26592f2e8c991dd9ff598a4d990f52a47bb2029604d6d90f2f147be9e73477'
+            'a5738ca116abd1c67d7a3b09c12a01fb5b547f6af96a0684a7b4cfa48f4aac7f'
+            '0c529fa6092e9bfba04609bc611cac4c9221a78d2efad5fe7c98f14a06737ade'
+            '1bfbc00ed439b59a70794146b734e4c21ab7bc93d33a48da97f1ca0e4a13884e')
+validpgpkeys=('2D1D5B0588357787DE9EE225EC94D18F7F05997E') # Jonathan Riddell <jr@jriddell.org>
+
+prepare() {
+  mkdir -p build{,-kde4}
+
+  cd $pkgbase-$pkgver
+  patch -Np1 < "$srcdir/reserve-space-for-checkable-widgets-on-the-left-side.patch"
+  patch -Np1 < "$srcdir/align-checkable-widgets-in-menu-items.patch"
+  patch -Np1 < "$srcdir/libbreezecommon-add-box-shadow-helper.patch"
+  patch -Np1 < "$srcdir/kdecoration-refine-shadows.patch"
+  patch -Np1 < "$srcdir/kstyle-refine-shadows.patch"
+}
+
+build() {
+  cd build
+  cmake ../$pkgbase-$pkgver \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DBUILD_TESTING=OFF
+  make
+
+  cd ../build-kde4
+  cmake ../$pkgbase-$pkgver \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DUSE_KDE4=ON \
+    -DBUILD_TESTING=OFF
+  make
+}
+
+package_breeze() {
+  depends=(frameworkintegration kdecoration breeze-icons kwayland hicolor-icon-theme fftw)
+  pkgdesc='Artwork, styles and assets for the Breeze visual style for the Plasma Desktop'
+  optdepends=('breeze-kde4: Breeze widget style for KDE4 applications'
+              'breeze-gtk: Breeze widget style for GTK applications'
+              'kcmutils: for breeze-settings')
+  groups=(plasma)
+
+  cd build
+  make DESTDIR="$pkgdir" install
+}
+
+package_breeze-kde4() {
+  pkgdesc='Breeze widget style for KDE4 applications'
+  depends=(kdelibs fftw)
+
+  cd build-kde4
+  make DESTDIR="$pkgdir" install
+
+  # needed for pure Qt4 apps
+  install -d "$pkgdir"/usr/lib/qt4/plugins/styles
+  ln -s /usr/lib/kde4/plugins/styles/breeze.so "$pkgdir"/usr/lib/qt4/plugins/styles
+}

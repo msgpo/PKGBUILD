@@ -1,0 +1,105 @@
+# Foreground
+[Foreground]
+Color=236,239,241
+
+[ForegroundIntense]
+Color=236,239,241
+Bold=true
+
+[ForegroundFaint]
+Color=149,166,177
+
+# Background
+[Background]
+Color=38,50,56
+
+[BackgroundIntense]
+Color=38,50,56
+
+[BackgroundFaint]
+Color=255,0,0
+
+# Black
+[Color0]
+Color=84,110,122
+
+[Color0Intense]
+Color=176,190,197
+
+[Color0Faint]
+Color=84,110,122
+
+# Red
+[Color1]
+Color=252,82,82
+
+[Color1Intense]
+Color=255,138,128
+
+[Color1Faint]
+Color=235,0,0
+
+# Green
+[Color2]
+Color=92,241,158
+
+[Color2Intense]
+Color=185,246,202
+
+[Color2Faint]
+Color=18,211,105
+
+# Yellow
+[Color3]
+Color=255,215,64
+
+[Color3Intense]
+Color=255,229,127
+
+[Color3Faint]
+Color=255,200,0
+
+# Blue
+[Color4]
+Color=64,196,255
+
+[Color4Intense]
+Color=128,216,255
+
+[Color4Faint]
+Color=0,174,255
+
+# Magenta
+[Color5]
+Color=255,64,129
+
+[Color5Intense]
+Color=255,128,171
+
+[Color5Faint]
+Color=255,0,85
+
+# Cyan
+[Color6]
+Color=100,252,218
+
+[Color6Intense]
+Color=167,253,235
+
+[Color6Faint]
+Color=30,250,203
+
+# White
+[Color7]
+Color=255,255,255
+
+[Color7Intense]
+Color=255,255,255
+
+[Color7Faint]
+Color=153,153,153
+
+[General]
+Description=Material
+Opacity=1
+Wallpaper=

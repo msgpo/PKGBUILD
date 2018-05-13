@@ -1,0 +1,89 @@
+# copied from arch repos
+
+pkgname=kwin
+pkgver=5.12.5
+pkgrel=4
+pkgdesc='An easy to use, but flexible, composited Window Manager'
+arch=(x86_64)
+url='https://www.kde.org/workspaces/plasmadesktop/'
+license=(LGPL)
+depends=(kscreenlocker xcb-util-cursor plasma-framework kcmutils breeze kinit qt5-sensors)
+makedepends=(extra-cmake-modules qt5-tools kdoctools python)
+optdepends=('qt5-virtualkeyboard: virtual keyboard support for kwin-wayland')
+groups=(plasma)
+source=("https://download.kde.org/stable/plasma/$pkgver/$pkgname-$pkgver.tar.xz"{,.sig}
+        replace-old-slide-effect.patch
+        use-more-efficient-blur.patch
+        remove-fastblur.patch
+        add-noise-blur-effect.patch
+        scenes-opengl-fix-overlapping-shadow-tiles.patch
+        scenes-qpainter-draw-decoration-shadows.patch
+        kcmkwin-kwindecoration-render-properly-shadows-with-.patch
+        libkwineffects-Add-render-buffer-wrapper.patch
+        libkwineffects-Delete-unused-stuff-in-GLRenderTarget.patch
+        libkwineffects-Fix-coding-style-in-GLRenderTarget.patch
+        libkwineffects-Use-renderbuffers-as-render-targets.patch
+        scenes-opengl-Render-scene-into-a-multisampled-rende.patch
+        libkwineffects-Fix-GLRenderTarget-blitFromFramebuffe.patch
+        effects-Use-multisampling.patch
+        effects-presentwindows-Put-icon-above-bottom-edge.patch)
+sha256sums=('433a40e8565d260d8ec4259d7ce4ec28ef4e4d37f4273bd60aff127a418275d6'
+            'SKIP'
+            'aa3ed2f9dcc6b517642336ef6ac23cc9293e36e1d7e97dee16e1e5f3c0a1e7e7'
+            '8e78046d8c6061a3ac105e5ae559d0aa65f1dabc06fa8d89a6870e28e275c6e6'
+            'cb79e9abbfc058f8646e5bc15f8504c88b8b6dab9eb4cb54c8a0d87b9809580f'
+            '95c12db413eb5b4289ac0d3b985ecd1fd4a9bbcb03351e95910f7998e2f3d741'
+            '9c6809f8afd9289e97c486360a064853754a4d1a8b16af70ce8c71f84162395d'
+            'ef0b9b959682674b18e882e2c2f928a3589d4cee00889f07f92d84fbd36e89af'
+            'e2b869fd35dfcbf831ebbf7c01676f1aeb6982557b69821e28dca795e320406b'
+            '1a3241abf5571821bb2168d40f8e43135b26817b7b2a8a1e8c778b0d699406c9'
+            '27ddbfb214aafe3975b05c6cfe556c59f0b54efcd6700fb7375642e6b35621f3'
+            '0efcba638723cccf0cdebfc43f97d48a8e7905024a704c917eae69f2b6210e7f'
+            'b1d8b0f84e6b689a60449617652c0defd357e056b9b755ede1c7c0a6c50217ed'
+            '252e3435ff860b379950c969394b5ed16f39d1610071b1ac306ec69d847d860f'
+            '7c424460f845da89c6f6152c8b757ac18102d2a079a30be5d77a0f82701c85cb'
+            '4e894d955387910461df332daa2c741aeafcabe7edf76d97f4a4c331be45e128'
+            '223b7e2e4989d8448d231cfbc7d4bfab09042d25c41de240fa42596956898aca')
+validpgpkeys=('2D1D5B0588357787DE9EE225EC94D18F7F05997E') # Jonathan Riddell <jr@jriddell.org>
+
+prepare() {
+  mkdir -p build
+
+  cd $pkgname-$pkgver
+
+  # Effects
+  patch -Np1 < "$srcdir/replace-old-slide-effect.patch"
+  patch -Np1 < "$srcdir/use-more-efficient-blur.patch"
+  patch -Np1 < "$srcdir/remove-fastblur.patch"
+  patch -Np1 < "$srcdir/add-noise-blur-effect.patch"
+  patch -Np1 < "$srcdir/effects-presentwindows-Put-icon-above-bottom-edge.patch"
+
+  # Shadows
+  patch -Np1 < "$srcdir/scenes-opengl-fix-overlapping-shadow-tiles.patch"
+  patch -Np1 < "$srcdir/scenes-qpainter-draw-decoration-shadows.patch"
+  patch -Np1 < "$srcdir/kcmkwin-kwindecoration-render-properly-shadows-with-.patch"
+
+  # Multisampling patches
+  patch -Np1 < "$srcdir/libkwineffects-Add-render-buffer-wrapper.patch"
+  patch -Np1 < "$srcdir/libkwineffects-Delete-unused-stuff-in-GLRenderTarget.patch"
+  patch -Np1 < "$srcdir/libkwineffects-Fix-coding-style-in-GLRenderTarget.patch"
+  patch -Np1 < "$srcdir/libkwineffects-Use-renderbuffers-as-render-targets.patch"
+  patch -Np1 < "$srcdir/libkwineffects-Fix-GLRenderTarget-blitFromFramebuffe.patch"
+  patch -Np1 < "$srcdir/scenes-opengl-Render-scene-into-a-multisampled-rende.patch"
+  patch -Np1 < "$srcdir/effects-Use-multisampling.patch"
+}
+
+build() {
+  cd build
+  cmake ../$pkgname-$pkgver \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DCMAKE_INSTALL_LIBEXECDIR=lib \
+    -DBUILD_TESTING=OFF
+  make
+}
+
+package() {
+  cd build
+  make DESTDIR="$pkgdir" install
+}

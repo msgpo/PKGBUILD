@@ -1,0 +1,35 @@
+# Maintainer: Vlad Zagorodniy <vladzzag@gmail.com>
+pkgname=plasma-browser-integration
+pkgver=r262.ge1b70f9
+pkgrel=1
+pkgdesc="Components necessary to integrate browsers into the Plasma Desktop"
+arch=('x86_64')
+url="https://www.kde.org/plasma-desktop"
+license=('GPL')
+depends=(kactivities ki18n kio knotifications krunner kwindowsystem)
+makedepends=(extra-cmake-modules git python)
+source=("git://git.kde.org/$pkgname.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd $pkgname
+    printf "r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+    mkdir -p build
+}
+
+build() {
+    cd build
+    cmake ../$pkgname \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DKDE_INSTALL_LIBDIR=lib
+    make
+}
+
+package() {
+    cd build
+    make DESTDIR="$pkgdir" install
+}

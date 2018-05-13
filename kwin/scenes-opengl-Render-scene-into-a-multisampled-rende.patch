@@ -1,0 +1,237 @@
+From 4fb0ce0ea639468eb37deceb0643cb093dbe340f Mon Sep 17 00:00:00 2001
+From: Vlad Zagorodniy <vladzzag@gmail.com>
+Date: Mon, 26 Mar 2018 17:39:38 +0300
+Subject: [PATCH 6/7] [scenes/opengl] Render scene into a multisampled render
+ buffer
+
+---
+ effects.cpp                            |  6 ++-
+ plugins/scenes/opengl/scene_opengl.cpp | 59 ++++++++++++++++++++++++++
+ plugins/scenes/opengl/scene_opengl.h   | 13 ++++++
+ scene.cpp                              | 14 ++++++
+ scene.h                                | 10 ++++-
+ 5 files changed, 99 insertions(+), 3 deletions(-)
+
+diff --git a/effects.cpp b/effects.cpp
+index 1e8849628..eb278d43b 100644
+--- a/effects.cpp
++++ b/effects.cpp
+@@ -366,8 +366,9 @@ void EffectsHandlerImpl::prePaintScreen(ScreenPrePaintData& data, int time)
+     if (m_currentPaintScreenIterator != m_activeEffects.constEnd()) {
+         (*m_currentPaintScreenIterator++)->prePaintScreen(data, time);
+         --m_currentPaintScreenIterator;
++    } else {
++        m_scene->finalPrePaintScreen(data, time);
+     }
+-    // no special final code
+ }
+ 
+ void EffectsHandlerImpl::paintScreen(int mask, QRegion region, ScreenPaintData& data)
+@@ -400,8 +401,9 @@ void EffectsHandlerImpl::postPaintScreen()
+     if (m_currentPaintScreenIterator != m_activeEffects.constEnd()) {
+         (*m_currentPaintScreenIterator++)->postPaintScreen();
+         --m_currentPaintScreenIterator;
++    } else {
++        m_scene->finalPostPaintScreen();
+     }
+-    // no special final code
+ }
+ 
+ void EffectsHandlerImpl::prePaintWindow(EffectWindow* w, WindowPrePaintData& data, int time)
+diff --git a/plugins/scenes/opengl/scene_opengl.cpp b/plugins/scenes/opengl/scene_opengl.cpp
+index d225b8e66..44a7b29ad 100644
+--- a/plugins/scenes/opengl/scene_opengl.cpp
++++ b/plugins/scenes/opengl/scene_opengl.cpp
+@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ #include "deleted.h"
+ #include "effects.h"
+ #include "lanczosfilter.h"
++#include "kwinglrenderbuffer.h"
+ #include "main.h"
+ #include "overlaywindow.h"
+ #include "screens.h"
+@@ -362,6 +363,14 @@ SceneOpenGL::SceneOpenGL(OpenGLBackend *backend, QObject *parent)
+             qCDebug(KWIN_OPENGL) << "Explicit synchronization with the X command stream disabled by environment variable";
+         }
+     }
++
++    // TODO: make number of samples configurable.
++    if (hasGLVersion(3, 0)) {
++        GLint maxSamples = 0;
++        glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
++        m_multisampling.samples = qMin(maxSamples, 8);
++        m_multisampling.supported = true;
++    }
+ }
+ 
+ static SceneOpenGL *gs_debuggedScene = nullptr;
+@@ -738,6 +747,55 @@ qint64 SceneOpenGL::paint(QRegion damage, ToplevelList toplevels)
+     return m_backend->renderTime();
+ }
+ 
++void SceneOpenGL::finalPrePaintScreen(ScreenPrePaintData& data, int time)
++{
++    Q_UNUSED(time);
++
++    if (! m_multisampling.supported) {
++        return;
++    }
++
++    // Because the multisampled render buffer is a little bit heavy resource, we
++    // create it on-demand and keep it till the PAINT_SCREEN_MULTISAMPLE flag
++    // is being set by effects in subsequent prePaintScreen calls.
++    if ((data.mask & PAINT_SCREEN_MULTISAMPLE) == 0) {
++        if (m_multisampling.fbo) {
++            m_multisampling.fbo.reset();
++            m_multisampling.rbo.reset();
++        }
++        return;
++    }
++
++    if (! m_multisampling.fbo) {
++        m_multisampling.rbo.reset(new GLRenderbuffer(screens()->size(), m_multisampling.samples, GL_RGBA8));
++        m_multisampling.fbo.reset(new GLRenderTarget(*m_multisampling.rbo));
++    }
++
++    // Screens can have different resolution and scale. Set appropriate viewport
++    // so multisampled results don't look stretched or downscaled.
++    const QSize screenSize(GLRenderTarget::virtualScreenGeometry().size() * GLRenderTarget::virtualScreenScale());
++    m_multisampling.fbo->setViewport(QRect(QPoint(0, 0), screenSize));
++
++    GLRenderTarget::pushRenderTarget(m_multisampling.fbo.data());
++    m_multisampling.pushed = true;
++    glEnable(GL_MULTISAMPLE);
++}
++
++void SceneOpenGL::finalPostPaintScreen()
++{
++    if (! m_multisampling.pushed) {
++        return;
++    }
++    glDisable(GL_MULTISAMPLE);
++    GLRenderTarget::popRenderTarget();
++    m_multisampling.pushed = false;
++
++    const QRect screenGeo(GLRenderTarget::virtualScreenGeometry());
++    const QSize screenSize(screenGeo.size() * GLRenderTarget::virtualScreenScale());
++    const QRect fboGeo(QPoint(0, 0), screenSize);
++    m_multisampling.fbo->blitToScreen(fboGeo, screenGeo, GL_NEAREST);
++}
++
+ QMatrix4x4 SceneOpenGL::transformation(int mask, const ScreenPaintData &data) const
+ {
+     QMatrix4x4 matrix;
+@@ -890,6 +948,7 @@ void SceneOpenGL::screenGeometryChanged(const QSize &size)
+     glViewport(0,0, size.width(), size.height());
+     m_backend->screenGeometryChanged(size);
+     GLRenderTarget::setVirtualScreenSize(size);
++    // TODO: resize multisampled rbo?
+ }
+ 
+ void SceneOpenGL::paintDesktop(int desktop, int mask, const QRegion &region, ScreenPaintData &data)
+diff --git a/plugins/scenes/opengl/scene_opengl.h b/plugins/scenes/opengl/scene_opengl.h
+index 6453d3b57..64217cbc1 100644
+--- a/plugins/scenes/opengl/scene_opengl.h
++++ b/plugins/scenes/opengl/scene_opengl.h
+@@ -30,8 +30,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ #include "decorations/decorationrenderer.h"
+ #include "platformsupport/scenes/opengl/backend.h"
+ 
++#include <QScopedPointer>
++
+ namespace KWin
+ {
++class GLRenderbuffer;
+ class LanczosFilter;
+ class OpenGLBackend;
+ class SyncManager;
+@@ -96,6 +99,9 @@ protected:
+     virtual void doPaintBackground(const QVector<float> &vertices) = 0;
+     virtual void updateProjectionMatrix() = 0;
+ 
++    void finalPrePaintScreen(ScreenPrePaintData& data, int time) override;
++    void finalPostPaintScreen() override;
++
+ protected:
+     bool init_ok;
+ private:
+@@ -105,6 +111,13 @@ private:
+     OpenGLBackend *m_backend;
+     SyncManager *m_syncManager;
+     SyncObject *m_currentFence;
++    struct {
++        bool supported = false;
++        bool pushed = false;
++        int samples = 0;
++        QScopedPointer<GLRenderbuffer> rbo;
++        QScopedPointer<GLRenderTarget> fbo;
++    } m_multisampling;
+ };
+ 
+ class SceneOpenGL2 : public SceneOpenGL
+diff --git a/scene.cpp b/scene.cpp
+index a12e97429..cb55ad612 100644
+--- a/scene.cpp
++++ b/scene.cpp
+@@ -192,6 +192,14 @@ void Scene::idle()
+     last_time.invalidate();
+ }
+ 
++// finalPrePaintScreen() will be eventually called after all effects
++// had their prePaintScreen() called.
++void Scene::finalPrePaintScreen(ScreenPrePaintData& data, int time)
++{
++    Q_UNUSED(data);
++    Q_UNUSED(time);
++}
++
+ // the function that'll be eventually called by paintScreen() above
+ void Scene::finalPaintScreen(int mask, QRegion region, ScreenPaintData& data)
+ {
+@@ -201,6 +209,12 @@ void Scene::finalPaintScreen(int mask, QRegion region, ScreenPaintData& data)
+         paintSimpleScreen(mask, region);
+ }
+ 
++// finalPostPaintScreen() will be eventually called after all effects
++// had their postPaintScreen() called.
++void Scene::finalPostPaintScreen()
++{
++}
++
+ // The generic painting code that can handle even transformations.
+ // It simply paints bottom-to-top.
+ void Scene::paintGenericScreen(int orig_mask, ScreenPaintData)
+diff --git a/scene.h b/scene.h
+index f7c67c5ca..0e9b2de71 100644
+--- a/scene.h
++++ b/scene.h
+@@ -124,8 +124,12 @@ public:
+         PAINT_SCREEN_BACKGROUND_FIRST = 1 << 6,
+         // PAINT_DECORATION_ONLY = 1 << 7 has been removed
+         // Window will be painted with a lanczos filter.
+-        PAINT_WINDOW_LANCZOS = 1 << 8
++        PAINT_WINDOW_LANCZOS = 1 << 8,
+         // PAINT_SCREEN_WITH_TRANSFORMED_WINDOWS_WITHOUT_FULL_REPAINTS = 1 << 9 has been removed
++        /**
++         * Use multisampling.
++         **/
++        PAINT_SCREEN_MULTISAMPLE = 1 << 10
+     };
+     // types of filtering available
+     enum ImageFilterType { ImageFilterFast, ImageFilterGood };
+@@ -205,8 +209,12 @@ protected:
+     // Render cursor texture in case hardware cursor is disabled/non-applicable
+     virtual void paintCursor() = 0;
+     friend class EffectsHandlerImpl;
++    // called after all effects had their prePaintScreen() called
++    virtual void finalPrePaintScreen(ScreenPrePaintData& data, int time);
+     // called after all effects had their paintScreen() called
+     void finalPaintScreen(int mask, QRegion region, ScreenPaintData& data);
++    // called after all effects had their postPaintScreen() called
++    virtual void finalPostPaintScreen();
+     // shared implementation of painting the screen in the generic
+     // (unoptimized) way
+     virtual void paintGenericScreen(int mask, ScreenPaintData data);
+-- 
+2.17.0
+

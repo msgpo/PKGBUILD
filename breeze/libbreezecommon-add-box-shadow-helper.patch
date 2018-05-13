@@ -1,0 +1,588 @@
+From 82ae6a83f36e06ff88b80a834bdfb89d507a75d5 Mon Sep 17 00:00:00 2001
+From: Vlad Zagorodniy <vladzzag@gmail.com>
+Date: Sun, 22 Apr 2018 13:58:34 +0300
+Subject: [PATCH] [libbreezecommon] add box shadow helper
+
+Summary:
+Box shadow helper is a helper which draws box shadows, similar to CSS box-shadow property. The only thing it's missing is the spread property but we don't need it pretty much.
+
+Demo
+
+Let's draw a box shadow for the rect QRect(300, 200, 200, 200) with the following params:
+* blur radius: 96
+* vertical offset: 50
+* color: black
+
+```lang=cpp
+Breeze::BoxShadowHelper::boxShadow(
+    &painter,
+    QRect(300, 200, 200, 200),
+    QPoint(0, 50),
+    96,
+    QColor(0, 0, 0));
+```
+// the size of the canvas is QSize(800, 600) //
+
+{F5754369, layout=center, size=full}
+
+Reviewers: #breeze, #vdg, hpereiradacosta
+
+Reviewed By: hpereiradacosta
+
+Subscribers: broulik, abetts, plasma-devel
+
+Tags: #plasma
+
+Differential Revision: https://phabricator.kde.org/D11198
+---
+ CMakeLists.txt                              |  15 +-
+ cmake/Modules/FindFFTW.cmake                |  20 ++
+ kstyle/CMakeLists.txt                       |   7 -
+ libbreezecommon/CMakeLists.txt              |  64 +++++
+ libbreezecommon/breezeboxshadowhelper.cpp   | 288 ++++++++++++++++++++
+ libbreezecommon/breezeboxshadowhelper.h     |  41 +++
+ libbreezecommon/config-breezecommon.h.cmake |  28 ++
+ 7 files changed, 454 insertions(+), 9 deletions(-)
+ create mode 100644 cmake/Modules/FindFFTW.cmake
+ create mode 100644 libbreezecommon/CMakeLists.txt
+ create mode 100644 libbreezecommon/breezeboxshadowhelper.cpp
+ create mode 100644 libbreezecommon/breezeboxshadowhelper.h
+ create mode 100644 libbreezecommon/config-breezecommon.h.cmake
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8742c4de..528aeaff 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -6,20 +6,30 @@ cmake_minimum_required(VERSION 2.8.12 FATAL_ERROR)
+ 
+ option(USE_KDE4 "Build a widget style for KDE4 (and nothing else)")
+ 
++include(GenerateExportHeader)
+ include(WriteBasicConfigVersionFile)
+ include(FeatureSummary)
+ 
++set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules")
++
+ if(USE_KDE4)
++  find_package(KDE4 REQUIRED)
++  include(KDE4Defaults)
++  include(MacroLibrary)
++
++  add_definitions(${QT_DEFINITIONS} ${KDE4_DEFINITIONS})
++  include_directories(${KDE4_INCLUDES})
++
++  add_subdirectory(libbreezecommon)
+   add_subdirectory(kstyle)
+ else()
+   find_package(ECM 0.0.9 REQUIRED NO_MODULE)
+-  set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH} ${ECM_KDE_MODULE_DIR} ${CMAKE_SOURCE_DIR}/cmake)
++  set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${ECM_MODULE_PATH} ${ECM_KDE_MODULE_DIR} ${CMAKE_SOURCE_DIR}/cmake)
+ 
+   include(ECMInstallIcons)
+   include(KDEInstallDirs)
+   include(KDECMakeSettings)
+   include(KDECompilerSettings NO_POLICY_SCOPE)
+-  include(GenerateExportHeader)
+   include(GtkUpdateIconCache)
+ 
+   option(WITH_DECORATIONS "Build Breeze window decorations for KWin" ON)
+@@ -30,6 +40,7 @@ else()
+ 
+   add_subdirectory(colors)
+   add_subdirectory(cursors)
++  add_subdirectory(libbreezecommon)
+   add_subdirectory(kstyle)
+   add_subdirectory(misc)
+   add_subdirectory(qtquickcontrols)
+diff --git a/cmake/Modules/FindFFTW.cmake b/cmake/Modules/FindFFTW.cmake
+new file mode 100644
+index 00000000..c3214373
+--- /dev/null
++++ b/cmake/Modules/FindFFTW.cmake
+@@ -0,0 +1,20 @@
++# Find the FFTW library
++#
++# Usage:
++#   find_package(FFTW [REQUIRED])
++#
++# It sets the following variables:
++#   FFTW_FOUND
++#   FFTW_INCLUDES
++#   FFTW_LIBRARIES
++
++
++find_path(FFTW_INCLUDES fftw3.h)
++
++find_library(FFTW_LIBRARIES NAMES fftw3)
++
++include(FindPackageHandleStandardArgs)
++find_package_handle_standard_args(FFTW DEFAULT_MSG
++                                  FFTW_INCLUDES FFTW_LIBRARIES)
++
++mark_as_advanced(FFTW_INCLUDES FFTW_LIBRARIES)
+diff --git a/kstyle/CMakeLists.txt b/kstyle/CMakeLists.txt
+index 9cdd51aa..9c60fc35 100644
+--- a/kstyle/CMakeLists.txt
++++ b/kstyle/CMakeLists.txt
+@@ -22,13 +22,6 @@ endif()
+ ################# Qt/KDE #################
+ if(BREEZE_USE_KDE4)
+ 
+-  find_package(KDE4 REQUIRED)
+-  include(KDE4Defaults)
+-  include(MacroLibrary)
+-
+-  add_definitions(${QT_DEFINITIONS} ${KDE4_DEFINITIONS})
+-  include_directories(${KDE4_INCLUDES})
+-
+   ### XCB
+   if(UNIX AND NOT APPLE)
+     find_package(PkgConfig REQUIRED)
+diff --git a/libbreezecommon/CMakeLists.txt b/libbreezecommon/CMakeLists.txt
+new file mode 100644
+index 00000000..af9848de
+--- /dev/null
++++ b/libbreezecommon/CMakeLists.txt
+@@ -0,0 +1,64 @@
++set(BREEZE_COMMON_USE_KDE4 ${USE_KDE4})
++
++if (BREEZE_COMMON_USE_KDE4)
++    ############ Language and toolchain features
++    ############ copied from ECM
++    if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
++        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
++    elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel" AND NOT WIN32)
++        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
++    endif ()
++endif ()
++
++################# dependencies #################
++### FFTW
++find_package(FFTW REQUIRED)
++
++### Qt/KDE
++if (NOT BREEZE_COMMON_USE_KDE4)
++    find_package(Qt5 REQUIRED CONFIG COMPONENTS Widgets)
++endif ()
++
++################# configuration #################
++configure_file(config-breezecommon.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config-breezecommon.h )
++
++################# breezestyle target #################
++set(breezecommon_LIB_SRCS
++    breezeboxshadowhelper.cpp
++)
++
++if (BREEZE_COMMON_USE_KDE4)
++    kde4_add_library(breezecommon4 SHARED ${breezecommon_LIB_SRCS})
++
++    generate_export_header(breezecommon4
++        BASE_NAME breezecommon
++        EXPORT_FILE_NAME breezecommon_export.h)
++
++    target_link_libraries(breezecommon4 ${KDE4_KDEUI_LIBS})
++    target_link_libraries(breezecommon4 ${FFTW_LIBRARIES})
++
++    set_target_properties(breezecommon4 PROPERTIES
++        VERSION ${PROJECT_VERSION}
++        SOVERSION ${PROJECT_VERSION_MAJOR})
++
++    install(TARGETS breezecommon4 ${INSTALL_TARGETS_DEFAULT_ARGS})
++else ()
++    add_library(breezecommon ${breezecommon_LIB_SRCS})
++
++    generate_export_header(breezecommon
++        BASE_NAME breezecommon
++        EXPORT_FILE_NAME breezecommon_export.h)
++
++    target_link_libraries(breezecommon
++        PUBLIC
++            Qt5::Core
++            Qt5::Gui
++        PRIVATE
++            ${FFTW_LIBRARIES})
++
++    set_target_properties(breezecommon PROPERTIES
++        VERSION ${PROJECT_VERSION}
++        SOVERSION ${PROJECT_VERSION_MAJOR})
++
++    install(TARGETS breezecommon ${INSTALL_TARGETS_DEFAULT_ARGS})
++endif ()
+diff --git a/libbreezecommon/breezeboxshadowhelper.cpp b/libbreezecommon/breezeboxshadowhelper.cpp
+new file mode 100644
+index 00000000..17d18ecd
+--- /dev/null
++++ b/libbreezecommon/breezeboxshadowhelper.cpp
+@@ -0,0 +1,288 @@
++/*
++ * Copyright (C) 2018 Vlad Zagorodniy <vladzzag@gmail.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License or (at your option) version 3 or any later version
++ * accepted by the membership of KDE e.V. (or its successor approved
++ * by the membership of KDE e.V.), which shall act as a proxy
++ * defined in Section 14 of version 3 of the license.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program. If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include "breezeboxshadowhelper.h"
++#include "config-breezecommon.h"
++
++#include <QVector>
++
++#include <fftw3.h>
++
++#include <cmath>
++
++
++namespace Breeze {
++namespace BoxShadowHelper {
++
++namespace {
++    // FFT approach outperforms naive blur method when blur radius >= 64.
++    // (was discovered after doing a lot of benchmarks)
++    const int FFT_BLUR_RADIUS_THRESHOLD = 64;
++
++    // According to the CSS Level 3 spec, standard deviation must be equal to
++    // half of the blur radius. https://www.w3.org/TR/css-backgrounds-3/#shadow-blur
++    // Current window size is too small for sigma equal to half of the blur radius.
++    // As a workaround, sigma blur scale is lowered. With the lowered sigma
++    // blur scale, area under the kernel equals to 0.98, which is pretty enough.
++    // Maybe, it should be changed in the future.
++    const double SIGMA_BLUR_SCALE = 0.4375;
++}
++
++inline int kernelSizeToRadius(int kernelSize)
++{
++    return (kernelSize - 1) / 2;
++}
++
++inline int radiusToKernelSize(int radius)
++{
++    return radius * 2 + 1;
++}
++
++QVector<double> computeGaussianKernel(int radius)
++{
++    QVector<double> kernel;
++    const int kernelSize = radiusToKernelSize(radius);
++    kernel.reserve(kernelSize);
++
++    const double sigma = SIGMA_BLUR_SCALE * radius;
++    const double den = std::sqrt(2.0) * sigma;
++    double kernelNorm = 0.0;
++    double lastInt = 0.5 * std::erf((-radius - 0.5) / den);
++
++    for (int i = 0; i < kernelSize; i++) {
++        const double currInt = 0.5 * std::erf((i - radius + 0.5) / den);
++        const double w = currInt - lastInt;
++        kernel << w;
++        kernelNorm += w;
++        lastInt = currInt;
++    }
++
++    for (auto &w : kernel) {
++        w /= kernelNorm;
++    }
++
++    return kernel;
++}
++
++// Do horizontal pass of the Gaussian filter. Please notice that the result
++// is transposed. So, the dst image should have proper size, e.g. if the src
++// image have (wxh) size then the dst image should have (hxw) size. The
++// result is transposed so we read memory in linear order.
++void blurAlphaNaivePass(const QImage &src, QImage &dst, const QVector<qreal> &kernel)
++{
++    const int alphaOffset = QSysInfo::ByteOrder == QSysInfo::BigEndian ? 0 : 3;
++    const int alphaStride = src.depth() >> 3;
++    const int radius = kernelSizeToRadius(kernel.size());
++
++    for (int y = 0; y < src.height(); y++) {
++        const uchar *in = src.scanLine(y) + alphaOffset;
++        uchar *out = dst.scanLine(0) + alphaOffset + y * alphaStride;
++
++        for (int x = 0; x < radius; x++) {
++            const uchar *window = in;
++            qreal alpha = 0;
++            for (int k = radius - x; k < kernel.size(); k++) {
++                alpha += *window * kernel[k];
++                window += alphaStride;
++            }
++            *out = static_cast<uchar>(alpha);
++            out += dst.width() * alphaStride;
++        }
++
++        for (int x = radius; x < src.width() - radius; x++) {
++            const uchar *window = in + (x - radius) * alphaStride;
++            qreal alpha = 0;
++            for (int k = 0; k < kernel.size(); k++) {
++                alpha += *window * kernel[k];
++                window += alphaStride;
++            }
++            *out = static_cast<uchar>(alpha);
++            out += dst.width() * alphaStride;
++        }
++
++        for (int x = src.width() - radius; x < src.width(); x++) {
++            const uchar *window = in + (x - radius - 1) * alphaStride;
++            qreal alpha = 0;
++            const int outside = x + radius - src.width();
++            for (int k = 0; k < kernel.size() - outside; k++) {
++                alpha += *window * kernel[k];
++                window += alphaStride;
++            }
++            *out = static_cast<uchar>(alpha);
++            out += dst.width() * alphaStride;
++        }
++    }
++}
++
++// Blur alpha channel of the given image using separable convolution
++// gaussian kernel. Not very efficient with big blur radii.
++void blurAlphaNaive(QImage &img, int radius)
++{
++    const QVector<qreal> kernel = computeGaussianKernel(radius);
++    QImage tmp(img.height(), img.width(), img.format());
++
++    blurAlphaNaivePass(img, tmp, kernel); // horizontal pass
++    blurAlphaNaivePass(tmp, img, kernel); // vertical pass
++}
++
++// Blur alpha channel of the given image using Fourier Transform.
++// It's somewhat efficient with big blur radii.
++//
++// It works as follows:
++//   - do FFT on given input image(it is expected, that the
++//     input image was padded before)
++//   - compute Gaussian kernel, pad it to the size of the input
++//     image, and do FFT on it
++//   - multiply the two in the frequency domain(element-wise)
++//   - transform the result back to "time domain"
++//
++void blurAlphaFFT(QImage &img, int radius)
++{
++    const int alphaOffset = QSysInfo::ByteOrder == QSysInfo::BigEndian ? 0 : 3;
++    const int alphaStride = img.depth() >> 3;
++    const int size = img.width() * img.height();
++
++    // Use FFTW's malloc function so the returned pointer obeys any
++    // special alignment restrictions. (e.g. for SIMD acceleration, etc)
++    // See http://www.fftw.org/fftw3_doc/MekernelSizeToRadius(mory-Allocation.html
++    fftw_complex *imageIn = fftw_alloc_complex(size);
++    fftw_complex *imageOut = fftw_alloc_complex(size);
++
++    uchar *data = img.scanLine(0) + alphaOffset;
++    for (int i = 0; i < size; i++) {
++        imageIn[i][0] = *data;
++        imageIn[i][1] = 0.0;
++        data += alphaStride;
++    }
++
++    fftw_plan imageFFT = fftw_plan_dft_2d(
++        img.height(), img.width(),
++        imageIn, imageOut,
++        FFTW_FORWARD, FFTW_ESTIMATE);
++
++    fftw_plan imageIFFT = fftw_plan_dft_2d(
++        img.height(), img.width(),
++        imageOut, imageIn,
++        FFTW_BACKWARD, FFTW_ESTIMATE);
++
++    // The computed Gaussian kernel has to have the same size as the input image.
++    // Please note that the center of the computed Gaussian kernel is placed
++    // at the top-left corner and the whole kernel is wrapped around so we read
++    // result in linear order.
++    // Note: the kernel is computed by taking a product of two 1-D Gaussian kernels.
++    QVector<double> kernel(size, 0);
++    const QVector<double> kernel_ = computeGaussianKernel(radius);
++    for (int y = 0; y < kernel_.size(); y++) {
++        const int i = (img.height() + y - radius) % img.height();
++        for (int x = 0; x < kernel_.size(); x++) {
++            const int j = (img.width() + x - radius) % img.width();
++            kernel[j + i * img.width()] = kernel_[x] * kernel_[y];
++        }
++    }
++
++    fftw_complex *kernelIn = fftw_alloc_complex(kernel.size());
++    fftw_complex *kernelOut = fftw_alloc_complex(kernel.size());
++
++    for (int i = 0; i < size; i++) {
++        kernelIn[i][0] = kernel[i];
++        kernelIn[i][1] = 0.0;
++    }
++
++    fftw_plan kernelFFT = fftw_plan_dft_2d(
++        img.height(), img.width(),
++        kernelIn, kernelOut,
++        FFTW_FORWARD, FFTW_ESTIMATE);
++
++    // Do actual FFT.
++    fftw_execute(imageFFT);
++    fftw_execute(kernelFFT);
++
++    for (int i = 0; i < size; i++) {
++        const double re = imageOut[i][0] * kernelOut[i][0] - imageOut[i][1] * kernelOut[i][1];
++        const double im = imageOut[i][0] * kernelOut[i][1] + imageOut[i][1] * kernelOut[i][0];
++        imageOut[i][0] = re;
++        imageOut[i][1] = im;
++    }
++
++    fftw_execute(imageIFFT);
++
++    // Copy result back. Please note, result is scaled by `width x height` so we need to scale it down.
++    const qreal invSize = 1.0 / size;
++    data = img.scanLine(0) + alphaOffset;
++    for (int i = 0; i < size; i++) {
++        *data = imageIn[i][0] * invSize;
++        data += alphaStride;
++    }
++
++    fftw_destroy_plan(kernelFFT);
++    fftw_destroy_plan(imageFFT);
++    fftw_destroy_plan(imageIFFT);
++
++    fftw_free(kernelIn);
++    fftw_free(kernelOut);
++
++    fftw_free(imageIn);
++    fftw_free(imageOut);
++}
++
++void boxShadow(QPainter *p, const QRect &box, const QPoint &offset, int radius, const QColor &color)
++{
++    const QSize size = box.size() + 2 * QSize(radius, radius);
++
++#if BREEZE_COMMON_USE_KDE4
++    const qreal dpr = 1.0;
++#else
++    const qreal dpr = p->device()->devicePixelRatioF();
++#endif
++
++    QPainter painter;
++
++    QImage shadow(size * dpr, QImage::Format_ARGB32_Premultiplied);
++#if !BREEZE_COMMON_USE_KDE4
++    shadow.setDevicePixelRatio(dpr);
++#endif
++    shadow.fill(Qt::transparent);
++
++    painter.begin(&shadow);
++    painter.fillRect(QRect(QPoint(radius, radius), box.size()), Qt::black);
++    painter.end();
++
++    // There is no need to blur RGB channels. Blur the alpha
++    // channel and then give the shadow a tint of the desired color.
++    const int radius_ = radius * dpr;
++    if (radius_ < FFT_BLUR_RADIUS_THRESHOLD) {
++        blurAlphaNaive(shadow, radius_);
++    } else {
++        blurAlphaFFT(shadow, radius_);
++    }
++
++    painter.begin(&shadow);
++    painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
++    painter.fillRect(shadow.rect(), color);
++    painter.end();
++
++    QRect shadowRect = shadow.rect();
++    shadowRect.setSize(shadowRect.size() / dpr);
++    shadowRect.moveCenter(box.center() + offset);
++    p->drawImage(shadowRect, shadow);
++}
++
++} // BoxShadowHelper
++} // Breeze
+diff --git a/libbreezecommon/breezeboxshadowhelper.h b/libbreezecommon/breezeboxshadowhelper.h
+new file mode 100644
+index 00000000..578b16ca
+--- /dev/null
++++ b/libbreezecommon/breezeboxshadowhelper.h
+@@ -0,0 +1,41 @@
++/*
++ * Copyright (C) 2018 Vlad Zagorodniy <vladzzag@gmail.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License or (at your option) version 3 or any later version
++ * accepted by the membership of KDE e.V. (or its successor approved
++ * by the membership of KDE e.V.), which shall act as a proxy
++ * defined in Section 14 of version 3 of the license.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program. If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#ifndef BREEZE_COMMON_BOXSHADOWHELPER_H
++#define BREEZE_COMMON_BOXSHADOWHELPER_H
++
++#include "breezecommon_export.h"
++
++#include <QColor>
++#include <QPainter>
++#include <QPoint>
++#include <QRect>
++
++
++namespace Breeze {
++namespace BoxShadowHelper {
++
++void BREEZECOMMON_EXPORT boxShadow(QPainter *p, const QRect &box, const QPoint &offset,
++                                   int radius, const QColor &color);
++
++} // BoxShadowHelper
++} // Breeze
++
++#endif // BREEZE_COMMON_BOXSHADOWHELPER_H
+diff --git a/libbreezecommon/config-breezecommon.h.cmake b/libbreezecommon/config-breezecommon.h.cmake
+new file mode 100644
+index 00000000..22cf748b
+--- /dev/null
++++ b/libbreezecommon/config-breezecommon.h.cmake
+@@ -0,0 +1,28 @@
++/* config-breezecommon.h. Generated by cmake from config-breezecommon.h.cmake */
++
++/*************************************************************************
++ * Copyright (C) 2014 by Hugo Pereira Da Costa <hugo.pereira@free.fr>    *
++ *                                                                       *
++ * This program is free software; you can redistribute it and/or modify  *
++ * it under the terms of the GNU General Public License as published by  *
++ * the Free Software Foundation; either version 2 of the License, or     *
++ * (at your option) any later version.                                   *
++ *                                                                       *
++ * This program is distributed in the hope that it will be useful,       *
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of        *
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
++ * GNU General Public License for more details.                          *
++ *                                                                       *
++ * You should have received a copy of the GNU General Public License     *
++ * along with this program; if not, write to the                         *
++ * Free Software Foundation, Inc.,                                       *
++ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA .        *
++ *************************************************************************/
++
++#ifndef config_breeze_common_h
++#define config_breeze_common_h
++
++/* Define to 1 if breeze is compiled against KDE4 */
++#cmakedefine01 BREEZE_COMMON_USE_KDE4
++
++#endif
+-- 
+2.17.0
+
