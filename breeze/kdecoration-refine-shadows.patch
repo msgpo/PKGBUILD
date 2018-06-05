@@ -1,7 +1,7 @@
-From 0541566f3ea241ceb2b59c865565a7adb0bdf768 Mon Sep 17 00:00:00 2001
+From 8cb5404a8a2a31897d2ff2f84cfcfb2a7749af41 Mon Sep 17 00:00:00 2001
 From: Vlad Zagorodniy <vladzzag@gmail.com>
-Date: Sat, 10 Mar 2018 01:55:21 +0200
-Subject: [PATCH] [kdecoration] refine shadows
+Date: Mon, 21 May 2018 20:31:07 +0300
+Subject: [PATCH 2/3] [kdecoration] Refine shadows
 
 Summary:
 5.12 release introduced new decoration shadows. These new shadows are
@@ -10,15 +10,15 @@ Yet, there are still some problems:
 
 * new(5.12) shadows are hard.
 * lighting model is broken. Because 5.12 shadows have been centered and
-  made bigger, they should be casted from north.
+made bigger, they should be casted from north.
 
 This change refines how decoration shadows look:
 * shadows are casted from north(shadow under window is bigger and darker,
-  side shadows are smaller, etc);
+side shadows are smaller, etc);
 * shadows are made up of several separate shadows(one for overall shape,
-  another for contrast). The separate shadows are produced by using box
-  shadow helper(something similar to CSS box-shadow property, except there are
-  no inset and spread properties);
+another for contrast). The separate shadows are produced by using box
+shadow helper(something similar to CSS box-shadow property, except there are
+no inset and spread properties);
 * shadow sizes(e.g. Small, Medium, and so on) haven't changed.
 
 Because GPUs can't be used for blurring images(in our case), the box shadow
@@ -26,8 +26,7 @@ helper is using CPU to blur images. More precisely, when blur radius is < 64,
 images are blurred with "separable convolutions", otherwise, images are blurred
 with a two-dimensional Fourier Transform.
 
-Depends on D10942
-Depends on D10811
+Depends on D11198
 
 Reviewers: #breeze, #vdg
 
@@ -38,9 +37,9 @@ Tags: #plasma
 Differential Revision: https://phabricator.kde.org/D11069
 ---
  kdecoration/CMakeLists.txt          |   5 +
- kdecoration/breezedecoration.cpp    | 247 ++++++++++++++++++----------
+ kdecoration/breezedecoration.cpp    | 242 ++++++++++++++++++----------
  kdecoration/breezesettingsdata.kcfg |   6 +-
- 3 files changed, 171 insertions(+), 87 deletions(-)
+ 3 files changed, 166 insertions(+), 87 deletions(-)
 
 diff --git a/kdecoration/CMakeLists.txt b/kdecoration/CMakeLists.txt
 index 5f8a873d..21ad5684 100644
@@ -66,7 +65,7 @@ index 5f8a873d..21ad5684 100644
          KF5::ConfigCore
          KF5::CoreAddons
 diff --git a/kdecoration/breezedecoration.cpp b/kdecoration/breezedecoration.cpp
-index 71cdab70..3df9f7f3 100644
+index 71cdab70..630ce1ba 100644
 --- a/kdecoration/breezedecoration.cpp
 +++ b/kdecoration/breezedecoration.cpp
 @@ -29,6 +29,8 @@
@@ -187,7 +186,7 @@ index 71cdab70..3df9f7f3 100644
      static QColor g_shadowColor = Qt::black;
      static QSharedPointer<KDecoration2::DecorationShadow> g_sShadow;
  
-@@ -622,105 +709,97 @@ namespace Breeze
+@@ -622,105 +709,92 @@ namespace Breeze
      //________________________________________________________________
      void Decoration::createShadow()
      {
@@ -284,18 +283,13 @@ index 71cdab70..3df9f7f3 100644
 -            painter.setBrush( Qt::black );
 -            painter.setCompositionMode(QPainter::CompositionMode_DestinationOut );
 -            painter.drawRoundedRect( innerRect, 0.5 + Metrics::Frame_FrameRadius, 0.5 + Metrics::Frame_FrameRadius );
-+            // Calculate the scaling factor by ourselves because devicePixelRatio() is not
-+            // available inside of KWin.
-+            const qreal dpr = QGuiApplication::primaryScreen()->logicalDotsPerInch() / 96.0;
-+
 +            // In order to properly render a box shadow with a given radius `shadowSize`,
 +            // the box size should be at least `2 * QSize(shadowSize, shadowSize)`.
 +            const int shadowSize = qMax(params.shadow1.radius, params.shadow2.radius);
 +            const QRect box(shadowSize, shadowSize, 2 * shadowSize + 1, 2 * shadowSize + 1);
 +            const QRect rect = box.adjusted(-shadowSize, -shadowSize, shadowSize, shadowSize);
 +
-+            QImage shadow(rect.size() * dpr, QImage::Format_ARGB32_Premultiplied);
-+            shadow.setDevicePixelRatio(dpr);
++            QImage shadow(rect.size(), QImage::Format_ARGB32_Premultiplied);
 +            shadow.fill(Qt::transparent);
 +
 +            QPainter painter(&shadow);
@@ -358,7 +352,7 @@ index 71cdab70..3df9f7f3 100644
 -            // assign image
 -            g_sShadow->setShadow(image);
 -
-+            g_sShadow->setPadding(padding * dpr);
++            g_sShadow->setPadding(padding);
 +            g_sShadow->setInnerShadowRect(QRect(shadow.rect().center(), QSize(1, 1)));
 +            g_sShadow->setShadow(shadow);
          }
@@ -393,5 +387,5 @@ index dcfd9d36..067c568b 100644
      -->
      <entry name="BorderSize" type = "Enum">
 -- 
-2.17.0
+2.17.1
 

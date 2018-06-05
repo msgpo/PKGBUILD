@@ -4,7 +4,7 @@
 pkgbase=breeze
 pkgname=(breeze breeze-kde4)
 pkgver=5.12.5
-pkgrel=3
+pkgrel=4
 arch=(x86_64)
 url='https://www.kde.org/workspaces/plasmadesktop/'
 license=(LGPL)
@@ -20,9 +20,9 @@ sha256sums=('764c1d174f5a2844a7144995b05b179a2d161d65f74d45ca353b524807f6aff7'
             'SKIP'
             '4419b2042c131666e27bef4b1ea48c1027fbedb176755263d272a71d1539bd35'
             '2e26592f2e8c991dd9ff598a4d990f52a47bb2029604d6d90f2f147be9e73477'
-            'a5738ca116abd1c67d7a3b09c12a01fb5b547f6af96a0684a7b4cfa48f4aac7f'
-            '0c529fa6092e9bfba04609bc611cac4c9221a78d2efad5fe7c98f14a06737ade'
-            '1bfbc00ed439b59a70794146b734e4c21ab7bc93d33a48da97f1ca0e4a13884e')
+            '52f5cf7fdf457a602ba25b0e972ea238ce0c028446fd2e35760413a360e2e86f'
+            '26178e1d27ec94dee26f786df4883364e243f483c5d55a8c148f32a1060eb909'
+            '1e2029bc32aa2ec6f7a099e887ce9a933c90eeae98b49c5a08d0824a46582924')
 validpgpkeys=('2D1D5B0588357787DE9EE225EC94D18F7F05997E') # Jonathan Riddell <jr@jriddell.org>
 
 prepare() {
