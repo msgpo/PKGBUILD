@@ -2,7 +2,7 @@
 
 pkgname=kwin
 pkgver=5.12.5
-pkgrel=4
+pkgrel=5
 pkgdesc='An easy to use, but flexible, composited Window Manager'
 arch=(x86_64)
 url='https://www.kde.org/workspaces/plasmadesktop/'
@@ -26,7 +26,8 @@ source=("https://download.kde.org/stable/plasma/$pkgver/$pkgname-$pkgver.tar.xz"
         scenes-opengl-Render-scene-into-a-multisampled-rende.patch
         libkwineffects-Fix-GLRenderTarget-blitFromFramebuffe.patch
         effects-Use-multisampling.patch
-        effects-presentwindows-Put-icon-above-bottom-edge.patch)
+        effects-presentwindows-Put-icon-above-bottom-edge.patch
+        half-pixel-correction.patch)
 sha256sums=('433a40e8565d260d8ec4259d7ce4ec28ef4e4d37f4273bd60aff127a418275d6'
             'SKIP'
             'aa3ed2f9dcc6b517642336ef6ac23cc9293e36e1d7e97dee16e1e5f3c0a1e7e7'
@@ -43,7 +44,8 @@ sha256sums=('433a40e8565d260d8ec4259d7ce4ec28ef4e4d37f4273bd60aff127a418275d6'
             '252e3435ff860b379950c969394b5ed16f39d1610071b1ac306ec69d847d860f'
             '7c424460f845da89c6f6152c8b757ac18102d2a079a30be5d77a0f82701c85cb'
             '4e894d955387910461df332daa2c741aeafcabe7edf76d97f4a4c331be45e128'
-            '223b7e2e4989d8448d231cfbc7d4bfab09042d25c41de240fa42596956898aca')
+            '223b7e2e4989d8448d231cfbc7d4bfab09042d25c41de240fa42596956898aca'
+            'c5beab00f239fb2d570376cb87bea86b13aef60c43bd218859e295ac1cf37ffb')
 validpgpkeys=('2D1D5B0588357787DE9EE225EC94D18F7F05997E') # Jonathan Riddell <jr@jriddell.org>
 
 prepare() {
@@ -71,6 +73,9 @@ prepare() {
   patch -Np1 < "$srcdir/libkwineffects-Fix-GLRenderTarget-blitFromFramebuffe.patch"
   patch -Np1 < "$srcdir/scenes-opengl-Render-scene-into-a-multisampled-rende.patch"
   patch -Np1 < "$srcdir/effects-Use-multisampling.patch"
+
+  # Scene patches
+  patch -Np1 < "$srcdir/half-pixel-correction.patch"
 }
 
 build() {
