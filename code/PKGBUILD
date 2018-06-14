@@ -1,6 +1,6 @@
 # Maintainer: Vlad Zagorodniy <vladzzag@gmail.com>
 pkgname=code
-pkgver=1.23.1
+pkgver=1.24.1
 pkgrel=1
 pkgdesc="Code Editing. Redefined."
 arch=('x86_64')
@@ -9,7 +9,7 @@ license=('custom: commercial')
 depends=(alsa-lib cairo fontconfig libxtst gcc-libs gconf gtk2 gvfs libnotify libxss nss python)
 source=("$pkgname-$pkgver.tar.gz"::"https://vscode-update.azurewebsites.net/$pkgver/linux-x64/stable"
         code.desktop)
-sha256sums=('f3d1d1bf9de4d4bdd53da2f08816e4673c0f84422257330dc6d117873fa2cc7f'
+sha256sums=('62c5faa37ad5047c450c30e2d4b6da5637cb59b3303b2b65c1d35d7749d984a4'
             'e1ea660686fdd3add7dd2d5d707c860fb3324d8d4abcf5a5a4fbaf06abe41da8')
 
 package() {
