@@ -3,7 +3,7 @@
 
 pkgbase=breeze
 pkgname=(breeze breeze-kde4)
-pkgver=5.13.0
+pkgver=5.13.1
 pkgrel=1
 arch=(x86_64)
 url='https://www.kde.org/workspaces/plasmadesktop/'
@@ -15,7 +15,7 @@ source=("https://download.kde.org/stable/plasma/$pkgver/$pkgbase-$pkgver.tar.xz"
         libbreezecommon-add-box-shadow-helper.patch
         kdecoration-refine-shadows.patch
         kstyle-refine-shadows.patch)
-sha256sums=('a03193bbc1c7a385c302ba988fb79996edcb09b5673ac399a4062e0409825129'
+sha256sums=('fa232e0e0eae018fb3a9d96ba60e46d6197e17a64ea9740515a6ad67d7445d46'
             'SKIP'
             '4419b2042c131666e27bef4b1ea48c1027fbedb176755263d272a71d1539bd35'
             '52f5cf7fdf457a602ba25b0e972ea238ce0c028446fd2e35760413a360e2e86f'
