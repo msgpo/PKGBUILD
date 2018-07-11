@@ -1,7 +1,7 @@
 # copied from arch repos
 
 pkgname=kwin
-pkgver=5.13.2
+pkgver=5.13.3
 pkgrel=1
 pkgdesc='An easy to use, but flexible, composited Window Manager'
 arch=(x86_64)
@@ -17,7 +17,7 @@ source=("https://download.kde.org/stable/plasma/$pkgver/$pkgname-$pkgver.tar.xz"
         kcmkwin-kwindecoration-render-properly-shadows-with-.patch
         effects-presentwindows-Put-icon-above-bottom-edge.patch
         scenes-opengl-Pad-decoration-parts.patch)
-sha256sums=('ce44bbdcfbdc5a170f75593175f9fb85475bdd93d4c8656e2fe24cff0795d00d'
+sha256sums=('7f069710a2c85c362dc5d1bbe25f54b46fa6ff4cf287c8d1a46bd43cf3f3cbaa'
             'SKIP'
             '9c6809f8afd9289e97c486360a064853754a4d1a8b16af70ce8c71f84162395d'
             'ef0b9b959682674b18e882e2c2f928a3589d4cee00889f07f92d84fbd36e89af'
