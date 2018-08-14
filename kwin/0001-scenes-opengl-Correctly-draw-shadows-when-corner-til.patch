@@ -1,0 +1,552 @@
+From 3b02e23b0626d384d8f16bb330cdadb49195091f Mon Sep 17 00:00:00 2001
+From: Vlad Zagorodniy <vladzzag@gmail.com>
+Date: Sun, 12 Aug 2018 21:23:12 +0300
+Subject: [PATCH 1/2] [scenes/opengl] Correctly draw shadows when corner tiles
+ are missing
+
+Current implementation of buildQuads assumes that corner shadow tiles
+are always present:
+
+    const QRectF leftRect(
+        topLeftRect.bottomLeft(),
+        bottomLeftRect.topRight());
+
+but that assumption is wrong. For example, if the default panel is on
+the bottom screen edge, then the calendar popup won't have the
+bottom-left shadow tile(at least on Wayland). Which means that the left
+shadow tile won't be visible because
+topLeftRect.left() == bottomLeftRect.right().
+
+Corner rectangles only have to influence height of the left/right tile
+and width of the top/bottom tile. Width of the left/right tile and
+height of the top/bottom tile should not be controlled by corner tiles.
+
+Overall, this is how shadow quads are computed:
+
+* Compute the outer rectangle;
+* Compute target rectangle for each corner tile. If some corner tile is
+  missing, move the target rectangle to the corresponding corner of the
+  inner shadow rect and set its width and height to 0. We need to do
+  that to prevent top/right/bottom/left tiles from spanning over
+  corners:
+
+{F6190219, layout=center, size=full}
+
+We would rather prefer something like this if the top-left tile is
+missing:
+{F6190233, layout=center, size=full}
+
+* Fix overlaps between corner tiles;
+* Compute target rectangles for top, right, bottom, and left tiles;
+* Fix overlaps between left/right and top/bottom shadow tiles.
+
+* Ran units;
+* Resized Konsole to its minimimum size(on X11 and Wayland);
+* Opened the calendar popup:
+
+Before:
+{F6190344, layout=center, size=full}
+
+After:
+{F6190346, layout=center, size=full}
+---
+ .../integration/scene_opengl_shadow_test.cpp  | 109 +++++++-
+ plugins/scenes/opengl/scene_opengl.cpp        | 262 +++++++++++-------
+ 2 files changed, 265 insertions(+), 106 deletions(-)
+
+diff --git a/autotests/integration/scene_opengl_shadow_test.cpp b/autotests/integration/scene_opengl_shadow_test.cpp
+index 2b4d21ef6..a3c15bd61 100644
+--- a/autotests/integration/scene_opengl_shadow_test.cpp
++++ b/autotests/integration/scene_opengl_shadow_test.cpp
+@@ -30,8 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ #include <KDecoration2/DecorationShadow>
+ 
+ #include <KWayland/Client/server_decoration.h>
++#include <KWayland/Client/shadow.h>
+ #include <KWayland/Client/shell.h>
++#include <KWayland/Client/shm_pool.h>
+ #include <KWayland/Client/surface.h>
++#include <KWayland/Server/shadow_interface.h>
++#include <KWayland/Server/surface_interface.h>
+ 
+ #include "kwin_wayland_test.h"
+ 
+@@ -61,11 +65,11 @@ public:
+ 
+ private Q_SLOTS:
+     void initTestCase();
+-    void init();
+     void cleanup();
+ 
+     void testShadowTileOverlaps_data();
+     void testShadowTileOverlaps();
++    void testNoCornerShadowTiles();
+ 
+ };
+ 
+@@ -148,11 +152,7 @@ void SceneOpenGLShadowTest::initTestCase()
+     group.writeEntry("library", "org.kde.test.fakedecowithshadows");
+     group.sync();
+     Workspace::self()->slotReconfigure();
+-}
+ 
+-void SceneOpenGLShadowTest::init()
+-{
+-    QVERIFY(Test::setupWaylandConnection(Test::AdditionalWaylandInterface::Decoration));
+ }
+ 
+ void SceneOpenGLShadowTest::cleanup()
+@@ -622,6 +622,8 @@ void SceneOpenGLShadowTest::testShadowTileOverlaps()
+     QFETCH(QSize, windowSize);
+     QFETCH(WindowQuadList, expectedQuads);
+ 
++    QVERIFY(Test::setupWaylandConnection(Test::AdditionalWaylandInterface::Decoration));
++
+     // Create a decorated client.
+     QScopedPointer<Surface> surface(Test::createSurface());
+     QScopedPointer<ShellSurface> shellSurface(Test::createShellSurface(surface.data()));
+@@ -679,5 +681,102 @@ void SceneOpenGLShadowTest::testShadowTileOverlaps()
+     }
+ }
+ 
++void SceneOpenGLShadowTest::testNoCornerShadowTiles()
++{
++    // this test verifies that top/right/bottom/left shadow tiles are
++    // still drawn even when corner tiles are missing
++
++    QVERIFY(Test::setupWaylandConnection(Test::AdditionalWaylandInterface::ShadowManager));
++
++    // Create a surface.
++    QScopedPointer<Surface> surface(Test::createSurface());
++    QScopedPointer<ShellSurface> shellSurface(Test::createShellSurface(surface.data()));
++    auto *client = Test::renderAndWaitForShown(surface.data(), QSize(512, 512), Qt::blue);
++    QVERIFY(client);
++    QVERIFY(!client->isDecorated());
++
++    // Render reference shadow texture with the following params:
++    //  - shadow size: 128
++    //  - inner rect size: 1
++    //  - padding: 128
++    QImage referenceShadowTexture(256 + 1, 256 + 1, QImage::Format_ARGB32_Premultiplied);
++    referenceShadowTexture.fill(Qt::transparent);
++
++    // We don't care about content of the shadow.
++
++    // Submit the shadow to KWin.
++    QScopedPointer<KWayland::Client::Shadow> clientShadow(Test::waylandShadowManager()->createShadow(surface.data()));
++    QVERIFY(clientShadow->isValid());
++
++    auto *shmPool = Test::waylandShmPool();
++
++    Buffer::Ptr bufferTop = shmPool->createBuffer(
++        referenceShadowTexture.copy(QRect(128, 0, 1, 128)));
++    clientShadow->attachTop(bufferTop);
++
++    Buffer::Ptr bufferRight = shmPool->createBuffer(
++        referenceShadowTexture.copy(QRect(128 + 1, 128, 128, 1)));
++    clientShadow->attachRight(bufferRight);
++
++    Buffer::Ptr bufferBottom = shmPool->createBuffer(
++        referenceShadowTexture.copy(QRect(128, 128 + 1, 1, 128)));
++    clientShadow->attachBottom(bufferBottom);
++
++    Buffer::Ptr bufferLeft = shmPool->createBuffer(
++        referenceShadowTexture.copy(QRect(0, 128, 128, 1)));
++    clientShadow->attachLeft(bufferLeft);
++
++    clientShadow->setOffsets(QMarginsF(128, 128, 128, 128));
++
++    QSignalSpy shadowChangedSpy(client->surface(), &KWayland::Server::SurfaceInterface::shadowChanged);
++    QVERIFY(shadowChangedSpy.isValid());
++    clientShadow->commit();
++    surface->commit(Surface::CommitFlag::None);
++    QVERIFY(shadowChangedSpy.wait());
++
++    // Check that we got right shadow from the client.
++    QPointer<KWayland::Server::ShadowInterface> shadowIface = client->surface()->shadow();
++    QVERIFY(!shadowIface.isNull());
++    QCOMPARE(shadowIface->offset().left(),   128.0);
++    QCOMPARE(shadowIface->offset().top(),    128.0);
++    QCOMPARE(shadowIface->offset().right(),  128.0);
++    QCOMPARE(shadowIface->offset().bottom(), 128.0);
++
++    QVERIFY(client->effectWindow());
++    QVERIFY(client->effectWindow()->sceneWindow());
++    KWin::Shadow *shadow = client->effectWindow()->sceneWindow()->shadow();
++    QVERIFY(shadow != nullptr);
++
++    const WindowQuadList &quads = shadow->shadowQuads();
++    QCOMPARE(quads.count(), 4);
++
++    // Shadow size: 128
++    // Padding: QMargins(128, 128, 128, 128)
++    // Inner rect: QRect(128, 128, 1, 1)
++    // Texture size: QSize(257, 257)
++    // Window size: QSize(512, 512)
++    WindowQuadList expectedQuads;
++    expectedQuads << makeShadowQuad(QRectF(0, -128, 512, 128), 0.0, 0.0, 1.0 / 257.0, 128.0 / 257.0);      // top
++    expectedQuads << makeShadowQuad(QRectF(512, 0, 128, 512), 1.0 - 128.0 / 257.0, 0.0, 1.0, 1.0 / 257.0); // right
++    expectedQuads << makeShadowQuad(QRectF(0, 512, 512, 128), 0.0, 1.0 - 128.0 / 257, 1.0 / 257, 1.0);     // bottom
++    expectedQuads << makeShadowQuad(QRectF(-128, 0, 128, 512), 0.0, 0.0, 128.0 / 257.0, 1.0 / 257.0);      // left
++
++    for (const WindowQuad &expectedQuad : expectedQuads) {
++        auto it = std::find_if(quads.constBegin(), quads.constEnd(),
++            [&expectedQuad](const WindowQuad &quad) {
++                return compareQuads(quad, expectedQuad);
++            });
++        if (it == quads.constEnd()) {
++            const QString message = QStringLiteral("Missing shadow quad (left: %1, top: %2, right: %3, bottom: %4)")
++                .arg(expectedQuad.left())
++                .arg(expectedQuad.top())
++                .arg(expectedQuad.right())
++                .arg(expectedQuad.bottom());
++            const QByteArray rawMessage = message.toLocal8Bit().data();
++            QFAIL(rawMessage.data());
++        }
++    }
++}
++
+ WAYLANDTEST_MAIN(SceneOpenGLShadowTest)
+ #include "scene_opengl_shadow_test.moc"
+diff --git a/plugins/scenes/opengl/scene_opengl.cpp b/plugins/scenes/opengl/scene_opengl.cpp
+index decaaffc2..11e740576 100644
+--- a/plugins/scenes/opengl/scene_opengl.cpp
++++ b/plugins/scenes/opengl/scene_opengl.cpp
+@@ -2135,6 +2135,24 @@ SceneOpenGLShadow::~SceneOpenGLShadow()
+     }
+ }
+ 
++static inline void distributeHorizontally(QRectF &leftRect, QRectF &rightRect)
++{
++    if (leftRect.right() >= rightRect.left()) {
++        const qreal halfOverlap = qAbs(leftRect.right() - rightRect.left()) / 2;
++        leftRect.setRight(leftRect.right() - halfOverlap);
++        rightRect.setLeft(rightRect.left() + halfOverlap);
++    }
++}
++
++static inline void distributeVertically(QRectF &topRect, QRectF &bottomRect)
++{
++    if (topRect.bottom() >= bottomRect.top()) {
++        const qreal halfOverlap = qAbs(topRect.bottom() - bottomRect.top()) / 2;
++        topRect.setBottom(topRect.bottom() - halfOverlap);
++        bottomRect.setTop(bottomRect.top() + halfOverlap);
++    }
++}
++
+ void SceneOpenGLShadow::buildQuads()
+ {
+     // Do not draw shadows if window width or window height is less than
+@@ -2154,6 +2172,12 @@ void SceneOpenGLShadow::buildQuads()
+     const QSizeF left(elementSize(ShadowElementLeft));
+     const QSizeF topLeft(elementSize(ShadowElementTopLeft));
+ 
++    const QMarginsF shadowMargins(
++        std::max({topLeft.width(), left.width(), bottomLeft.width()}),
++        std::max({topLeft.height(), top.height(), topRight.height()}),
++        std::max({topRight.width(), right.width(), bottomRight.width()}),
++        std::max({bottomRight.height(), bottom.height(), bottomLeft.height()}));
++
+     const QRectF outerRect(QPointF(-leftOffset(), -topOffset()),
+                            QPointF(topLevel()->width() + rightOffset(),
+                                    topLevel()->height() + bottomOffset()));
+@@ -2165,12 +2189,52 @@ void SceneOpenGLShadow::buildQuads()
+                      + std::max(left.height(), right.height())
+                      + std::max({bottomLeft.height(), bottom.height(), bottomRight.height()});
+ 
+-    QRectF topLeftRect(outerRect.topLeft(), topLeft);
+-    QRectF topRightRect(outerRect.topRight() - QPointF(topRight.width(), 0), topRight);
+-    QRectF bottomRightRect(
+-        outerRect.bottomRight() - QPointF(bottomRight.width(), bottomRight.height()),
+-        bottomRight);
+-    QRectF bottomLeftRect(outerRect.bottomLeft() - QPointF(0, bottomLeft.height()), bottomLeft);
++    QRectF topLeftRect;
++    if (!topLeft.isEmpty()) {
++        topLeftRect = QRectF(outerRect.topLeft(), topLeft);
++    } else {
++        topLeftRect = QRectF(
++            outerRect.left() + shadowMargins.left(),
++            outerRect.top() + shadowMargins.top(),
++            0, 0);
++    }
++
++    QRectF topRightRect;
++    if (!topRight.isEmpty()) {
++        topRightRect = QRectF(
++            outerRect.right() - topRight.width(), outerRect.top(),
++            topRight.width(), topRight.height());
++    } else {
++        topRightRect = QRectF(
++            outerRect.right() - shadowMargins.right(),
++            outerRect.top() + shadowMargins.top(),
++            0, 0);
++    }
++
++    QRectF bottomRightRect;
++    if (!bottomRight.isEmpty()) {
++        bottomRightRect = QRectF(
++            outerRect.right() - bottomRight.width(),
++            outerRect.bottom() - bottomRight.height(),
++            bottomRight.width(), bottomRight.height());
++    } else {
++        bottomRightRect = QRectF(
++            outerRect.right() - shadowMargins.right(),
++            outerRect.bottom() - shadowMargins.bottom(),
++            0, 0);
++    }
++
++    QRectF bottomLeftRect;
++    if (!bottomLeft.isEmpty()) {
++        bottomLeftRect = QRectF(
++            outerRect.left(), outerRect.bottom() - bottomLeft.height(),
++            bottomLeft.width(), bottomLeft.height());
++    } else {
++        bottomLeftRect = QRectF(
++            outerRect.left() + shadowMargins.left(),
++            outerRect.bottom() - shadowMargins.bottom(),
++            0, 0);
++    }
+ 
+     // Re-distribute the corner tiles so no one of them is overlapping with others.
+     // By doing this, we assume that shadow's corner tiles are symmetric
+@@ -2179,37 +2243,10 @@ void SceneOpenGLShadow::buildQuads()
+     // In that case, the right side of the top-left tile will be shifted to left,
+     // the left side of the top-right tile will shifted to right, and the top
+     // tile won't be rendered.
+-    bool drawTop = true;
+-    if (topLeftRect.right() >= topRightRect.left()) {
+-        const float halfOverlap = qAbs(topLeftRect.right() - topRightRect.left()) / 2;
+-        topLeftRect.setRight(topLeftRect.right() - halfOverlap);
+-        topRightRect.setLeft(topRightRect.left() + halfOverlap);
+-        drawTop = false;
+-    }
+-
+-    bool drawRight = true;
+-    if (topRightRect.bottom() >= bottomRightRect.top()) {
+-        const float halfOverlap = qAbs(topRightRect.bottom() - bottomRightRect.top()) / 2;
+-        topRightRect.setBottom(topRightRect.bottom() - halfOverlap);
+-        bottomRightRect.setTop(bottomRightRect.top() + halfOverlap);
+-        drawRight = false;
+-    }
+-
+-    bool drawBottom = true;
+-    if (bottomLeftRect.right() >= bottomRightRect.left()) {
+-        const float halfOverlap = qAbs(bottomLeftRect.right() - bottomRightRect.left()) / 2;
+-        bottomLeftRect.setRight(bottomLeftRect.right() - halfOverlap);
+-        bottomRightRect.setLeft(bottomRightRect.left() + halfOverlap);
+-        drawBottom = false;
+-    }
+-
+-    bool drawLeft = true;
+-    if (topLeftRect.bottom() >= bottomLeftRect.top()) {
+-        const float halfOverlap = qAbs(topLeftRect.bottom() - bottomLeftRect.top()) / 2;
+-        topLeftRect.setBottom(topLeftRect.bottom() - halfOverlap);
+-        bottomLeftRect.setTop(bottomLeftRect.top() + halfOverlap);
+-        drawLeft = false;
+-    }
++    distributeHorizontally(topLeftRect, topRightRect);
++    distributeHorizontally(bottomLeftRect, bottomRightRect);
++    distributeVertically(topLeftRect, bottomLeftRect);
++    distributeVertically(topRightRect, bottomRightRect);
+ 
+     qreal tx1 = 0.0,
+           tx2 = 0.0,
+@@ -2218,57 +2255,86 @@ void SceneOpenGLShadow::buildQuads()
+ 
+     m_shadowQuads.clear();
+ 
+-    tx1 = 0.0;
+-    ty1 = 0.0;
+-    tx2 = topLeftRect.width() / width;
+-    ty2 = topLeftRect.height() / height;
+-    WindowQuad topLeftQuad(WindowQuadShadow);
+-    topLeftQuad[0] = WindowVertex(topLeftRect.left(),  topLeftRect.top(),    tx1, ty1);
+-    topLeftQuad[1] = WindowVertex(topLeftRect.right(), topLeftRect.top(),    tx2, ty1);
+-    topLeftQuad[2] = WindowVertex(topLeftRect.right(), topLeftRect.bottom(), tx2, ty2);
+-    topLeftQuad[3] = WindowVertex(topLeftRect.left(),  topLeftRect.bottom(), tx1, ty2);
+-    m_shadowQuads.append(topLeftQuad);
+-
+-    tx1 = 1.0 - topRightRect.width() / width;
+-    ty1 = 0.0;
+-    tx2 = 1.0;
+-    ty2 = topRightRect.height() / height;
+-    WindowQuad topRightQuad(WindowQuadShadow);
+-    topRightQuad[0] = WindowVertex(topRightRect.left(),  topRightRect.top(),    tx1, ty1);
+-    topRightQuad[1] = WindowVertex(topRightRect.right(), topRightRect.top(),    tx2, ty1);
+-    topRightQuad[2] = WindowVertex(topRightRect.right(), topRightRect.bottom(), tx2, ty2);
+-    topRightQuad[3] = WindowVertex(topRightRect.left(),  topRightRect.bottom(), tx1, ty2);
+-    m_shadowQuads.append(topRightQuad);
+-
+-    tx1 = 1.0 - bottomRightRect.width() / width;
+-    tx2 = 1.0;
+-    ty1 = 1.0 - bottomRightRect.height() / height;
+-    ty2 = 1.0;
+-    WindowQuad bottomRightQuad(WindowQuadShadow);
+-    bottomRightQuad[0] = WindowVertex(bottomRightRect.left(),  bottomRightRect.top(),    tx1, ty1);
+-    bottomRightQuad[1] = WindowVertex(bottomRightRect.right(), bottomRightRect.top(),    tx2, ty1);
+-    bottomRightQuad[2] = WindowVertex(bottomRightRect.right(), bottomRightRect.bottom(), tx2, ty2);
+-    bottomRightQuad[3] = WindowVertex(bottomRightRect.left(),  bottomRightRect.bottom(), tx1, ty2);
+-    m_shadowQuads.append(bottomRightQuad);
+-
+-    tx1 = 0.0;
+-    tx2 = bottomLeftRect.width() / width;
+-    ty1 = 1.0 - bottomLeftRect.height() / height;
+-    ty2 = 1.0;
+-    WindowQuad bottomLeftQuad(WindowQuadShadow);
+-    bottomLeftQuad[0] = WindowVertex(bottomLeftRect.left(),  bottomLeftRect.top(),    tx1, ty1);
+-    bottomLeftQuad[1] = WindowVertex(bottomLeftRect.right(), bottomLeftRect.top(),    tx2, ty1);
+-    bottomLeftQuad[2] = WindowVertex(bottomLeftRect.right(), bottomLeftRect.bottom(), tx2, ty2);
+-    bottomLeftQuad[3] = WindowVertex(bottomLeftRect.left(),  bottomLeftRect.bottom(), tx1, ty2);
+-    m_shadowQuads.append(bottomLeftQuad);
+-
+-    if (drawTop) {
+-        const QRectF topRect(
+-            topLeftRect.topRight(),
+-            topRightRect.bottomLeft());
++    if (topLeftRect.isValid()) {
++        tx1 = 0.0;
++        ty1 = 0.0;
++        tx2 = topLeftRect.width() / width;
++        ty2 = topLeftRect.height() / height;
++        WindowQuad topLeftQuad(WindowQuadShadow);
++        topLeftQuad[0] = WindowVertex(topLeftRect.left(),  topLeftRect.top(),    tx1, ty1);
++        topLeftQuad[1] = WindowVertex(topLeftRect.right(), topLeftRect.top(),    tx2, ty1);
++        topLeftQuad[2] = WindowVertex(topLeftRect.right(), topLeftRect.bottom(), tx2, ty2);
++        topLeftQuad[3] = WindowVertex(topLeftRect.left(),  topLeftRect.bottom(), tx1, ty2);
++        m_shadowQuads.append(topLeftQuad);
++    }
++
++    if (topRightRect.isValid()) {
++        tx1 = 1.0 - topRightRect.width() / width;
++        ty1 = 0.0;
++        tx2 = 1.0;
++        ty2 = topRightRect.height() / height;
++        WindowQuad topRightQuad(WindowQuadShadow);
++        topRightQuad[0] = WindowVertex(topRightRect.left(),  topRightRect.top(),    tx1, ty1);
++        topRightQuad[1] = WindowVertex(topRightRect.right(), topRightRect.top(),    tx2, ty1);
++        topRightQuad[2] = WindowVertex(topRightRect.right(), topRightRect.bottom(), tx2, ty2);
++        topRightQuad[3] = WindowVertex(topRightRect.left(),  topRightRect.bottom(), tx1, ty2);
++        m_shadowQuads.append(topRightQuad);
++    }
++
++    if (bottomRightRect.isValid()) {
++        tx1 = 1.0 - bottomRightRect.width() / width;
++        tx2 = 1.0;
++        ty1 = 1.0 - bottomRightRect.height() / height;
++        ty2 = 1.0;
++        WindowQuad bottomRightQuad(WindowQuadShadow);
++        bottomRightQuad[0] = WindowVertex(bottomRightRect.left(),  bottomRightRect.top(),    tx1, ty1);
++        bottomRightQuad[1] = WindowVertex(bottomRightRect.right(), bottomRightRect.top(),    tx2, ty1);
++        bottomRightQuad[2] = WindowVertex(bottomRightRect.right(), bottomRightRect.bottom(), tx2, ty2);
++        bottomRightQuad[3] = WindowVertex(bottomRightRect.left(),  bottomRightRect.bottom(), tx1, ty2);
++        m_shadowQuads.append(bottomRightQuad);
++    }
++
++    if (bottomLeftRect.isValid()) {
++        tx1 = 0.0;
++        tx2 = bottomLeftRect.width() / width;
++        ty1 = 1.0 - bottomLeftRect.height() / height;
++        ty2 = 1.0;
++        WindowQuad bottomLeftQuad(WindowQuadShadow);
++        bottomLeftQuad[0] = WindowVertex(bottomLeftRect.left(),  bottomLeftRect.top(),    tx1, ty1);
++        bottomLeftQuad[1] = WindowVertex(bottomLeftRect.right(), bottomLeftRect.top(),    tx2, ty1);
++        bottomLeftQuad[2] = WindowVertex(bottomLeftRect.right(), bottomLeftRect.bottom(), tx2, ty2);
++        bottomLeftQuad[3] = WindowVertex(bottomLeftRect.left(),  bottomLeftRect.bottom(), tx1, ty2);
++        m_shadowQuads.append(bottomLeftQuad);
++    }
++
++    QRectF topRect(
++        QPointF(topLeftRect.right(), outerRect.top()),
++        QPointF(topRightRect.left(), outerRect.top() + top.height()));
++
++    QRectF rightRect(
++        QPointF(outerRect.right() - right.width(), topRightRect.bottom()),
++        QPointF(outerRect.right(), bottomRightRect.top()));
++
++    QRectF bottomRect(
++        QPointF(bottomLeftRect.right(), outerRect.bottom() - bottom.height()),
++        QPointF(bottomRightRect.left(), outerRect.bottom()));
++
++    QRectF leftRect(
++        QPointF(outerRect.left(), topLeftRect.bottom()),
++        QPointF(outerRect.left() + left.width(), bottomLeftRect.top()));
++
++    // Re-distribute left/right and top/bottom shadow tiles so they don't
++    // overlap when the window is too small. Please notice that we don't
++    // fix overlaps between left/top(left/bottom, right/top, and so on)
++    // corner tiles because corresponding counter parts won't be valid when
++    // the window is too small, which means they won't be rendered.
++    distributeHorizontally(leftRect, rightRect);
++    distributeVertically(topRect, bottomRect);
++
++    if (topRect.isValid()) {
+         tx1 = topLeft.width() / width;
+         ty1 = 0.0;
+-        tx2 = 1.0 - topRight.width() / width;
++        tx2 = tx1 + top.width() / width;
+         ty2 = topRect.height() / height;
+         WindowQuad topQuad(WindowQuadShadow);
+         topQuad[0] = WindowVertex(topRect.left(),  topRect.top(),    tx1, ty1);
+@@ -2278,14 +2344,11 @@ void SceneOpenGLShadow::buildQuads()
+         m_shadowQuads.append(topQuad);
+     }
+ 
+-    if (drawRight) {
+-        const QRectF rightRect(
+-            topRightRect.bottomLeft(),
+-            bottomRightRect.topRight());
++    if (rightRect.isValid()) {
+         tx1 = 1.0 - rightRect.width() / width;
+         ty1 = topRight.height() / height;
+         tx2 = 1.0;
+-        ty2 = 1.0 - bottomRight.height() / height;
++        ty2 = ty1 + right.height() / height;
+         WindowQuad rightQuad(WindowQuadShadow);
+         rightQuad[0] = WindowVertex(rightRect.left(),  rightRect.top(),    tx1, ty1);
+         rightQuad[1] = WindowVertex(rightRect.right(), rightRect.top(),    tx2, ty1);
+@@ -2294,13 +2357,10 @@ void SceneOpenGLShadow::buildQuads()
+         m_shadowQuads.append(rightQuad);
+     }
+ 
+-    if (drawBottom) {
+-        const QRectF bottomRect(
+-            bottomLeftRect.topRight(),
+-            bottomRightRect.bottomLeft());
++    if (bottomRect.isValid()) {
+         tx1 = bottomLeft.width() / width;
+         ty1 = 1.0 - bottomRect.height() / height;
+-        tx2 = 1.0 - bottomRight.width() / width;
++        tx2 = tx1 + bottom.width() / width;
+         ty2 = 1.0;
+         WindowQuad bottomQuad(WindowQuadShadow);
+         bottomQuad[0] = WindowVertex(bottomRect.left(),  bottomRect.top(),    tx1, ty1);
+@@ -2310,14 +2370,11 @@ void SceneOpenGLShadow::buildQuads()
+         m_shadowQuads.append(bottomQuad);
+     }
+ 
+-    if (drawLeft) {
+-        const QRectF leftRect(
+-            topLeftRect.bottomLeft(),
+-            bottomLeftRect.topRight());
++    if (leftRect.isValid()) {
+         tx1 = 0.0;
+         ty1 = topLeft.height() / height;
+         tx2 = leftRect.width() / width;
+-        ty2 = 1.0 - bottomRight.height() / height;
++        ty2 = ty1 + left.height() / height;
+         WindowQuad leftQuad(WindowQuadShadow);
+         leftQuad[0] = WindowVertex(leftRect.left(),  leftRect.top(),    tx1, ty1);
+         leftQuad[1] = WindowVertex(leftRect.right(), leftRect.top(),    tx2, ty1);
+@@ -2356,6 +2413,9 @@ bool SceneOpenGLShadow::prepareBackend()
+         return false;
+     }
+ 
++    // FIXME: If the corner tiles are missing, the left/top/right/bottom tiles
++    // will overlap, e.g. the top tile and the left tile.
++
+     QImage image(width, height, QImage::Format_ARGB32);
+     image.fill(Qt::transparent);
+     QPainter p;
+-- 
+2.18.0
+

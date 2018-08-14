@@ -2,7 +2,7 @@
 
 pkgname=kwin
 pkgver=5.13.4
-pkgrel=1
+pkgrel=2
 pkgdesc='An easy to use, but flexible, composited Window Manager'
 arch=(x86_64)
 url='https://www.kde.org/workspaces/plasmadesktop/'
@@ -16,14 +16,18 @@ source=("https://download.kde.org/stable/plasma/$pkgver/$pkgname-$pkgver.tar.xz"
         scenes-qpainter-draw-decoration-shadows.patch
         kcmkwin-kwindecoration-render-properly-shadows-with-.patch
         effects-presentwindows-Put-icon-above-bottom-edge.patch
-        scenes-opengl-Pad-decoration-parts.patch)
+        scenes-opengl-Pad-decoration-parts.patch
+        0001-scenes-opengl-Correctly-draw-shadows-when-corner-til.patch
+        0002-scenes-opengl-Fix-overlaps-in-shadow-texture-atlas.patch)
 sha256sums=('86b5129a06636c31cdb3bbed2d9fc33d5866acc6929400ec0edb02043b10d0c6'
             'SKIP'
-            '9c6809f8afd9289e97c486360a064853754a4d1a8b16af70ce8c71f84162395d'
+            'e07cf7d2f16e5f98d2f13650c3f25e04bb5ffc2401ad27789e17a93b5db0c381'
             'ef0b9b959682674b18e882e2c2f928a3589d4cee00889f07f92d84fbd36e89af'
             'e2b869fd35dfcbf831ebbf7c01676f1aeb6982557b69821e28dca795e320406b'
             '223b7e2e4989d8448d231cfbc7d4bfab09042d25c41de240fa42596956898aca'
-            '7590a62354f94dd4643afc816564fabbe51db0aaf6a0527fbe831b63a0a4ed86')
+            '7590a62354f94dd4643afc816564fabbe51db0aaf6a0527fbe831b63a0a4ed86'
+            '516d6e166b10dfc8f1ede4317d8ed0f579bce482e61e1d23d46259c319d600d9'
+            '6d1f588595544e26a85a53f672b795e4880794008ef7f066dd820a8adebc37fa')
 validpgpkeys=('2D1D5B0588357787DE9EE225EC94D18F7F05997E'  # Jonathan Riddell <jr@jriddell.org>
               '0AAC775BB6437A8D9AF7A3ACFE0784117FBCE11D') # Bhushan Shah <bshah@kde.org>
 
@@ -39,6 +43,8 @@ prepare() {
   patch -Np1 < "$srcdir/scenes-opengl-fix-overlapping-shadow-tiles.patch"
   patch -Np1 < "$srcdir/scenes-qpainter-draw-decoration-shadows.patch"
   patch -Np1 < "$srcdir/kcmkwin-kwindecoration-render-properly-shadows-with-.patch"
+  patch -Np1 < "$srcdir/0001-scenes-opengl-Correctly-draw-shadows-when-corner-til.patch"
+  patch -Np1 < "$srcdir/0002-scenes-opengl-Fix-overlaps-in-shadow-texture-atlas.patch"
 
   # Scene patches
   patch -Np1 < "$srcdir/scenes-opengl-Pad-decoration-parts.patch"
