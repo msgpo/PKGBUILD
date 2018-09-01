@@ -1,0 +1,94 @@
+From 763ec6d335417df7985fbbd4ef456287915b4d1d Mon Sep 17 00:00:00 2001
+From: Fabian Vogt <fabian@ritter-vogt.de>
+Date: Sat, 4 Aug 2018 14:41:22 +0200
+Subject: [PATCH] Rename libbreezecommon to libbreezecommon5 and don't install
+ .so links
+
+Summary:
+libbreezecommon is not meant to be used outside of breeze (it can't, no headers
+are installed) so the .so link is not necessary.
+
+Additionally, rename libbreezecommon.so.5 to libbreezecommon5.so.5 for symmetry
+with libbreezecommon4.so.5.
+
+Test Plan: Built and installed it - still works.
+
+Reviewers: #breeze, zzag
+
+Reviewed By: zzag
+
+Subscribers: plasma-devel
+
+Tags: #plasma
+
+Differential Revision: https://phabricator.kde.org/D14599
+---
+ kdecoration/CMakeLists.txt     |  2 +-
+ kstyle/CMakeLists.txt          |  2 +-
+ libbreezecommon/CMakeLists.txt | 12 ++++++------
+ 3 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/kdecoration/CMakeLists.txt b/kdecoration/CMakeLists.txt
+index 21ad5684..e79d7288 100644
+--- a/kdecoration/CMakeLists.txt
++++ b/kdecoration/CMakeLists.txt
+@@ -75,7 +75,7 @@ target_link_libraries(breezedecoration
+         Qt5::Gui
+         Qt5::DBus
+     PRIVATE
+-        breezecommon
++        breezecommon5
+         KDecoration2::KDecoration
+         KF5::ConfigCore
+         KF5::CoreAddons
+diff --git a/kstyle/CMakeLists.txt b/kstyle/CMakeLists.txt
+index 83538bec..3ee936cb 100644
+--- a/kstyle/CMakeLists.txt
++++ b/kstyle/CMakeLists.txt
+@@ -164,7 +164,7 @@ else()
+     target_link_libraries(breeze Qt5::Quick)
+   endif()
+   target_link_libraries(breeze KF5::ConfigCore KF5::ConfigWidgets KF5::GuiAddons KF5::WindowSystem)
+-  target_link_libraries(breeze breezecommon)
++  target_link_libraries(breeze breezecommon5)
+ 
+   if( KF5FrameworkIntegration_FOUND )
+   target_link_libraries(breeze KF5::Style)
+diff --git a/libbreezecommon/CMakeLists.txt b/libbreezecommon/CMakeLists.txt
+index af9848de..92d924b0 100644
+--- a/libbreezecommon/CMakeLists.txt
++++ b/libbreezecommon/CMakeLists.txt
+@@ -41,24 +41,24 @@ if (BREEZE_COMMON_USE_KDE4)
+         VERSION ${PROJECT_VERSION}
+         SOVERSION ${PROJECT_VERSION_MAJOR})
+ 
+-    install(TARGETS breezecommon4 ${INSTALL_TARGETS_DEFAULT_ARGS})
++    install(TARGETS breezecommon4 ${INSTALL_TARGETS_DEFAULT_ARGS} LIBRARY NAMELINK_SKIP)
+ else ()
+-    add_library(breezecommon ${breezecommon_LIB_SRCS})
++    add_library(breezecommon5 ${breezecommon_LIB_SRCS})
+ 
+-    generate_export_header(breezecommon
++    generate_export_header(breezecommon5
+         BASE_NAME breezecommon
+         EXPORT_FILE_NAME breezecommon_export.h)
+ 
+-    target_link_libraries(breezecommon
++    target_link_libraries(breezecommon5
+         PUBLIC
+             Qt5::Core
+             Qt5::Gui
+         PRIVATE
+             ${FFTW_LIBRARIES})
+ 
+-    set_target_properties(breezecommon PROPERTIES
++    set_target_properties(breezecommon5 PROPERTIES
+         VERSION ${PROJECT_VERSION}
+         SOVERSION ${PROJECT_VERSION_MAJOR})
+ 
+-    install(TARGETS breezecommon ${INSTALL_TARGETS_DEFAULT_ARGS})
++    install(TARGETS breezecommon5 ${INSTALL_TARGETS_DEFAULT_ARGS} LIBRARY NAMELINK_SKIP)
+ endif ()
+-- 
+2.18.0
+
