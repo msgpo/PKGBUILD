@@ -1,8 +1,8 @@
 # copied from arch repos
 
 pkgname=kwin
-pkgver=5.13.4
-pkgrel=3
+pkgver=5.13.5
+pkgrel=1
 pkgdesc='An easy to use, but flexible, composited Window Manager'
 arch=(x86_64)
 url='https://www.kde.org/workspaces/plasmadesktop/'
@@ -20,7 +20,7 @@ source=("https://download.kde.org/stable/plasma/$pkgver/$pkgname-$pkgver.tar.xz"
         0001-scenes-opengl-Correctly-draw-shadows-when-corner-til.patch
         0002-scenes-opengl-Fix-overlaps-in-shadow-texture-atlas.patch
         0001-RFC-Keep-Deleted-transients-above-old-parents.patch)
-sha256sums=('86b5129a06636c31cdb3bbed2d9fc33d5866acc6929400ec0edb02043b10d0c6'
+sha256sums=('d53d380dab763827e4f3effcb4f0725aaec91ded6f702e0fcc5d856829bba151'
             'SKIP'
             'e07cf7d2f16e5f98d2f13650c3f25e04bb5ffc2401ad27789e17a93b5db0c381'
             'ef0b9b959682674b18e882e2c2f928a3589d4cee00889f07f92d84fbd36e89af'
