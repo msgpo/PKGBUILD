@@ -1,6 +1,6 @@
 # Maintainer: Vlad Zagorodniy <vladzzag@gmail.com>
 pkgname=capitaine-cursors
-pkgver=2.1.r1.g46c3ffd
+pkgver=2.1.r3.g960f9e9
 pkgrel=1
 pkgdesc="An x-cursor theme inspired by macOS and based on KDE Breeze"
 arch=('any')
