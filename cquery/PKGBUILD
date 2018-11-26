@@ -1,0 +1,37 @@
+# Maintainer: Vlad Zagorodniy <vladzzag@gmail.com>
+pkgname=cquery
+pkgver=20180718.r91.9494c3e6
+pkgrel=1
+pkgdesc="C/C++ language server supporting multi-million line code base, powered by libclang"
+arch=('x86_64')
+url="https://github.com/cquery-project/cquery"
+license=('MIT')
+depends=(clang)
+makedepends=(cmake git)
+source=("git+https://github.com/cquery-project/cquery.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd $pkgname
+    printf "%s" "$(git describe --long | sed 's/^v//;s/\([^-]*-\)g/r\1/;s/-/./g')"
+}
+
+prepare() {
+    mkdir -p build
+    cd $pkgname
+    git submodule update --init --recursive
+}
+
+build() {
+    cd build
+    cmake ../$pkgname \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DSYSTEM_CLANG=ON
+    make
+}
+
+package() {
+    cd build
+    make DESTDIR="$pkgdir/" install
+}
